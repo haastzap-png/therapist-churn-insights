@@ -27,6 +27,7 @@ with st.sidebar:
         ["帳單歷史首次結帳（建議）", "會員來店次數 = 1"],
     )
     chart_top_n = st.number_input("圖表顯示前 N 名（0=全部）", min_value=0, max_value=100, value=0, step=1)
+    store_chart_type = st.selectbox("分店比較圖表", ["群組直條圖", "熱度圖", "堆疊條圖"])
 
 st.write("""
 本工具會：
@@ -309,7 +310,9 @@ with st.sidebar:
     else:
         store_filter = None
     designer_options = sorted([s for s in new_first["設計師"].dropna().unique()])
-    designer_filter = st.multiselect("師傅", designer_options, default=designer_options)
+    exclude_designers = st.multiselect("排除師傅", designer_options, default=[])
+    include_options = [d for d in designer_options if d not in set(exclude_designers)]
+    designer_filter = st.multiselect("師傅", include_options, default=include_options)
 
 filtered_new_first = new_first.copy()
 if has_store and store_filter is not None:
@@ -354,31 +357,20 @@ if has_store:
     )
 summary_by_store_designer["repeat_rate"] = 1 - summary_by_store_designer["churn_rate"]
 
-# Designer-level metrics for rankings
-new_by_designer = (
-    filtered_new_first.groupby("設計師")["phone_key"].count().reset_index(name="new_customers")
-)
-designer_metrics = summary_by_designer.merge(new_by_designer, on="設計師", how="outer")
+# Designer-level metrics for rankings (僅計入滿 60 天新客)
+designer_metrics = summary_by_designer.copy()
+designer_metrics["new_customers"] = designer_metrics["matured_new_customers"]
 
 # Store monthly summary (average per month)
 store_monthly_avg = None
 if has_store:
-    store_month = filtered_new_first.copy()
+    store_month = filtered_matured.copy()
     store_month["month"] = store_month["結帳操作時間"].dt.to_period("M").astype(str)
-    month_new = (
-        store_month.groupby(["分店", "month"])["phone_key"]
-        .count()
-        .reset_index(name="new_customers")
-    )
-    month_matured = store_month[store_month["matured"]].copy()
-    month_matured = (
-        month_matured.groupby(["分店", "month"])
+    month_summary = (
+        store_month.groupby(["分店", "month"])
         .agg(matured_new_customers=("phone_key", "count"), churned=("churn", "sum"))
         .reset_index()
     )
-    month_summary = month_new.merge(month_matured, on=["分店", "month"], how="left")
-    month_summary["matured_new_customers"] = month_summary["matured_new_customers"].fillna(0)
-    month_summary["churned"] = month_summary["churned"].fillna(0)
     month_summary["retained"] = month_summary["matured_new_customers"] - month_summary["churned"]
     month_summary["repeat_rate"] = np.where(
         month_summary["matured_new_customers"] > 0,
@@ -388,7 +380,7 @@ if has_store:
     store_monthly_avg = (
         month_summary.groupby("分店")
         .agg(
-            月平均新客數=("new_customers", "mean"),
+            月平均新客數=("matured_new_customers", "mean"),
             月平均流失數=("churned", "mean"),
             月平均留住數=("retained", "mean"),
             平均回訪率=("repeat_rate", "mean"),
@@ -426,10 +418,10 @@ if "項目" in merged.columns:
     designer_metrics = designer_metrics.merge(vacancy_by_designer, on="設計師", how="left")
 
 overall = {
-    "new_customers": int(len(filtered_new_first)),
     "matured_new_customers": int(len(filtered_matured)),
     "churned_matured": int(filtered_matured["churn"].sum()),
 }
+overall["retained_matured"] = overall["matured_new_customers"] - overall["churned_matured"]
 overall["churn_rate_matured"] = (
     overall["churned_matured"] / overall["matured_new_customers"]
     if overall["matured_new_customers"]
@@ -443,6 +435,7 @@ overall["repeat_rate_matured"] = (
 
 if has_store and store_monthly_avg is not None and not store_monthly_avg.empty:
     st.subheader("各分店摘要（每月平均）")
+    st.caption("僅計入滿 60 天的新客 cohort（最嚴謹）。")
     for _, row in store_monthly_avg.iterrows():
         store_name = row["分店"]
         avg_new = row["月平均新客數"]
@@ -455,7 +448,16 @@ if has_store and store_monthly_avg is not None and not store_monthly_avg.empty:
         )
 
     st.subheader("分店指標對比（每月平均）")
-    metric_long = store_monthly_avg.melt(
+    metric_base = store_monthly_avg.copy()
+    if chart_top_n and chart_top_n > 0:
+        top_stores = (
+            metric_base.sort_values("月平均新客數", ascending=False)
+            .head(int(chart_top_n))["分店"]
+            .tolist()
+        )
+        metric_base = metric_base[metric_base["分店"].isin(top_stores)]
+
+    metric_long = metric_base.melt(
         id_vars=["分店"],
         value_vars=["月平均新客數", "月平均流失數", "月平均留住數"],
         var_name="指標",
@@ -468,13 +470,72 @@ if has_store and store_monthly_avg is not None and not store_monthly_avg.empty:
             "月平均留住數": "留住(人)",
         }
     )
-    line = alt.Chart(metric_long).mark_line(point=True).encode(
+
+    if store_chart_type == "群組直條圖":
+        group_chart = alt.Chart(metric_long).mark_bar().encode(
+            x=alt.X("分店:N", sort="-y", title="", axis=alt.Axis(labelAngle=-30)),
+            y=alt.Y("人數:Q", title="人數(每月平均)"),
+            color=alt.Color("指標:N", title="指標"),
+            xOffset="指標:N",
+            tooltip=["分店", "指標", alt.Tooltip("人數:Q", format=",.1f")],
+        ).properties(height=320)
+        st.altair_chart(group_chart, use_container_width=True)
+    elif store_chart_type == "熱度圖":
+        heat = alt.Chart(metric_long).mark_rect().encode(
+            x=alt.X("指標:N", title=""),
+            y=alt.Y("分店:N", title=""),
+            color=alt.Color("人數:Q", title="人數(每月平均)"),
+            tooltip=["分店", "指標", alt.Tooltip("人數:Q", format=",.1f")],
+        ).properties(height=320)
+        text = alt.Chart(metric_long).mark_text(color="white").encode(
+            x="指標:N",
+            y="分店:N",
+            text=alt.Text("人數:Q", format=".1f"),
+        )
+        st.altair_chart(heat + text, use_container_width=True)
+    else:
+        stack_long = metric_long[metric_long["指標"].isin(["流失(人)", "留住(人)"])].copy()
+        stack = alt.Chart(stack_long).mark_bar().encode(
+            x=alt.X("分店:N", sort="-y", title="", axis=alt.Axis(labelAngle=-30)),
+            y=alt.Y("人數:Q", stack=True, title="每月平均新客(人)"),
+            color=alt.Color("指標:N", title="構成"),
+            tooltip=["分店", "指標", alt.Tooltip("人數:Q", format=",.1f")],
+        ).properties(height=320)
+        totals = store_monthly_avg.copy()
+        totals["總人"] = totals["月平均流失數"] + totals["月平均留住數"]
+        total_text = alt.Chart(totals).mark_text(dy=-6, color="#333").encode(
+            x=alt.X("分店:N", sort="-y"),
+            y=alt.Y("總人:Q"),
+            text=alt.Text("總人:Q", format=".1f"),
+        )
+        st.altair_chart(stack + total_text, use_container_width=True)
+
+    if chart_top_n and chart_top_n > 0:
+        st.caption(f"分店比較圖僅顯示前 {int(chart_top_n)} 名（依每月平均新客數排序）。Small Multiples 顯示全部分店。")
+
+    st.subheader("分店 Small Multiples（每月平均）")
+    metric_long_all = store_monthly_avg.melt(
+        id_vars=["分店"],
+        value_vars=["月平均新客數", "月平均流失數", "月平均留住數"],
+        var_name="指標",
+        value_name="人數",
+    )
+    metric_long_all["指標"] = metric_long_all["指標"].replace(
+        {
+            "月平均新客數": "新客(人)",
+            "月平均流失數": "流失(人)",
+            "月平均留住數": "留住(人)",
+        }
+    )
+    small = alt.Chart(metric_long_all).mark_bar().encode(
         x=alt.X("指標:N", sort=["新客(人)", "流失(人)", "留住(人)"], title=""),
         y=alt.Y("人數:Q", title="人數"),
-        color=alt.Color("分店:N", title="分店"),
+        color=alt.Color("指標:N", title="指標"),
         tooltip=["分店", "指標", alt.Tooltip("人數:Q", format=",.1f")],
-    ).properties(height=280)
-    st.altair_chart(line, use_container_width=True)
+    ).facet(
+        column=alt.Column("分店:N", title="", columns=3)
+    ).properties(height=180)
+    st.altair_chart(small, use_container_width=True)
 
     st.subheader("各分店回訪率（圖）")
     shown, total = render_bar_chart(
@@ -492,9 +553,9 @@ if has_store and store_monthly_avg is not None and not store_monthly_avg.empty:
 
 st.subheader("總覽摘要")
 col1, col2, col3, col4, col5 = st.columns(5)
-col1.metric("新客數", overall["new_customers"])
-col2.metric("成熟新客數", overall["matured_new_customers"])
-col3.metric("流失人數", overall["churned_matured"])
+col1.metric("滿60天新客數", overall["matured_new_customers"])
+col2.metric("流失人數", overall["churned_matured"])
+col3.metric("留住人數", overall["retained_matured"])
 col4.metric("流失率", f"{overall['churn_rate_matured']:.2%}" if overall["churn_rate_matured"] is not None else "-")
 col5.metric("回訪率", f"{overall['repeat_rate_matured']:.2%}" if overall["repeat_rate_matured"] is not None else "-")
 
@@ -512,7 +573,7 @@ shown, total = render_bar_chart(
     orient="vertical",
 )
 if total:
-    st.caption(f"顯示 {shown}/{total} 位師傅（僅列出成熟新客數 > 0）")
+    st.caption(f"顯示 {shown}/{total} 位師傅（僅計入滿 60 天新客）")
 
 st.subheader("各師傅回訪率（圖）")
 shown, total = render_bar_chart(
@@ -526,7 +587,7 @@ shown, total = render_bar_chart(
     orient="vertical",
 )
 if total:
-    st.caption(f"顯示 {shown}/{total} 位師傅（僅列出成熟新客數 > 0）")
+    st.caption(f"顯示 {shown}/{total} 位師傅（僅計入滿 60 天新客）")
 
 if has_store:
     st.subheader("各分店流失率（圖）")
@@ -557,6 +618,7 @@ if has_store:
         st.caption(f"顯示 {shown}/{total} 間分店（可在側邊欄調整前 N 名）")
 
 st.subheader("師傅排行榜（Top 6）")
+st.caption("排行榜與新客相關指標皆以滿 60 天的新客 cohort 計算。")
 col_good, col_watch = st.columns(2)
 
 with col_good:
@@ -692,8 +754,7 @@ st.markdown("**師傅彙總**")
 designer_table = designer_metrics.rename(
     columns={
         "設計師": "師傅",
-        "new_customers": "新客數",
-        "matured_new_customers": "成熟新客數",
+        "new_customers": "滿60天新客數",
         "churned": "流失數",
         "churn_rate": "流失率",
         "repeat_rate": "回訪率",
@@ -701,7 +762,7 @@ designer_table = designer_metrics.rename(
     }
 )
 designer_table = designer_table[[c for c in designer_table.columns if c in [
-    "師傅","新客數","成熟新客數","流失數","流失率","回訪率","平均空窗率"
+    "師傅","滿60天新客數","流失數","流失率","回訪率","平均空窗率"
 ]]]
 st.dataframe(designer_table.sort_values("流失率", ascending=False), use_container_width=True)
 
@@ -711,7 +772,7 @@ if has_store:
     store_table = summary_by_store.rename(
         columns={
             "分店": "分店",
-            "matured_new_customers": "成熟新客數",
+            "matured_new_customers": "滿60天新客數",
             "churned": "流失數",
             "churn_rate": "流失率",
             "repeat_rate": "回訪率",
@@ -724,7 +785,7 @@ if has_store:
         columns={
             "分店": "分店",
             "設計師": "師傅",
-            "matured_new_customers": "成熟新客數",
+            "matured_new_customers": "滿60天新客數",
             "churned": "流失數",
             "churn_rate": "流失率",
             "repeat_rate": "回訪率",
@@ -779,8 +840,15 @@ st.dataframe(detail_display[display_cols].sort_values("首單時間"), use_conta
 st.subheader("下載報表")
 
 output = BytesIO()
+overall_df = pd.DataFrame([{
+    "滿60天新客數": overall["matured_new_customers"],
+    "流失人數": overall["churned_matured"],
+    "留住人數": overall["retained_matured"],
+    "流失率": overall["churn_rate_matured"],
+    "回訪率": overall["repeat_rate_matured"],
+}])
 with pd.ExcelWriter(output, engine="openpyxl") as writer:
-    pd.DataFrame([overall]).to_excel(writer, index=False, sheet_name="總覽")
+    overall_df.to_excel(writer, index=False, sheet_name="總覽")
     designer_table.to_excel(writer, index=False, sheet_name="師傅彙總")
     if store_table is not None:
         store_table.to_excel(writer, index=False, sheet_name="分店彙總")
