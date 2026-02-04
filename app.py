@@ -513,42 +513,7 @@ if has_store and store_monthly_avg is not None and not store_monthly_avg.empty:
     if chart_top_n and chart_top_n > 0:
         st.caption(f"分店比較圖僅顯示前 {int(chart_top_n)} 名（依每月平均新客數排序）。Small Multiples 顯示全部分店。")
 
-    st.subheader("分店 Small Multiples（每月平均）")
-    metric_long_all = store_monthly_avg.melt(
-        id_vars=["分店"],
-        value_vars=["月平均新客數", "月平均流失數", "月平均留住數"],
-        var_name="指標",
-        value_name="人數",
-    )
-    metric_long_all["指標"] = metric_long_all["指標"].replace(
-        {
-            "月平均新客數": "新客(人)",
-            "月平均流失數": "流失(人)",
-            "月平均留住數": "留住(人)",
-        }
-    )
-    small_base = alt.Chart(metric_long_all).mark_bar().encode(
-        x=alt.X("指標:N", sort=["新客(人)", "流失(人)", "留住(人)"], title=""),
-        y=alt.Y("人數:Q", title="人數"),
-        color=alt.Color("指標:N", title="指標"),
-        tooltip=["分店", "指標", alt.Tooltip("人數:Q", format=",.1f")],
-    ).properties(height=180)
-    small = small_base.facet(column="分店:N", columns=3)
-    st.altair_chart(small, use_container_width=True)
-
-    st.subheader("各分店回訪率（圖）")
-    shown, total = render_bar_chart(
-        store_monthly_avg,
-        "分店",
-        "平均回訪率",
-        "回訪率",
-        color="#76b7b2",
-        top_n=chart_top_n,
-        value_format="percent",
-        orient="vertical",
-    )
-    if total:
-        st.caption(f"顯示 {shown}/{total} 間分店（可在側邊欄調整前 N 名）")
+    # 移除 Small Multiples 依需求
 
 st.subheader("總覽摘要")
 col1, col2, col3, col4, col5 = st.columns(5)
@@ -560,61 +525,98 @@ col5.metric("回訪率", f"{overall['repeat_rate_matured']:.2%}" if overall["rep
 
 st.caption(f"資料截止時間：{end_date}")
 
-st.subheader("各師傅流失率（圖）")
-shown, total = render_bar_chart(
-    summary_by_designer.sort_values("churn_rate", ascending=False),
-    "設計師",
-    "churn_rate",
-    "流失率",
-    color="#e15759",
-    top_n=chart_top_n,
-    value_format="percent",
-    orient="vertical",
-)
-if total:
-    st.caption(f"顯示 {shown}/{total} 位師傅（僅計入滿 60 天新客）")
+st.subheader("個別師傅綜合狀態（最近 3 個月）")
+st.caption("僅計入滿 60 天的新客 cohort。")
 
-st.subheader("各師傅回訪率（圖）")
-shown, total = render_bar_chart(
-    summary_by_designer.sort_values("repeat_rate", ascending=False),
-    "設計師",
-    "repeat_rate",
-    "回訪率",
-    color="#59a14f",
-    top_n=chart_top_n,
-    value_format="percent",
-    orient="vertical",
-)
-if total:
-    st.caption(f"顯示 {shown}/{total} 位師傅（僅計入滿 60 天新客）")
+# 最近三個月的師傅指標
+end_ts = pd.to_datetime(end_date)
+start_ts = end_ts - pd.DateOffset(months=3)
+recent = filtered_matured[filtered_matured["結帳操作時間"] >= start_ts].copy()
 
-if has_store:
-    st.subheader("各分店流失率（圖）")
-    shown, total = render_bar_chart(
-        summary_by_store.sort_values("churn_rate", ascending=False),
-        "分店",
-        "churn_rate",
-        "流失率",
-        color="#e15759",
-        top_n=chart_top_n,
-        value_format="percent",
-        orient="vertical",
+recent_by_designer = (
+    recent.groupby("設計師")
+    .agg(
+        new_customers_3m=("phone_key", "count"),
+        churned_3m=("churn", "sum"),
     )
-    if total:
-        st.caption(f"顯示 {shown}/{total} 間分店（可在側邊欄調整前 N 名）")
-    st.subheader("各分店回訪率（圖）")
-    shown, total = render_bar_chart(
-        summary_by_store.sort_values("repeat_rate", ascending=False),
-        "分店",
-        "repeat_rate",
-        "回訪率",
-        color="#59a14f",
-        top_n=chart_top_n,
-        value_format="percent",
-        orient="vertical",
+    .reset_index()
+)
+recent_by_designer["churn_rate_3m"] = np.where(
+    recent_by_designer["new_customers_3m"] > 0,
+    recent_by_designer["churned_3m"] / recent_by_designer["new_customers_3m"],
+    np.nan,
+)
+recent_by_designer["repeat_rate_3m"] = 1 - recent_by_designer["churn_rate_3m"]
+
+# 空窗率（最近三個月平均）
+vacancy_recent = None
+if vacancy_monthly is not None and not vacancy_monthly.empty:
+    vm = vacancy_monthly.copy()
+    vm["month_start"] = pd.to_datetime(vm["month"] + "-01")
+    vm = vm[vm["month_start"] >= start_ts]
+    vacancy_recent = (
+        vm.groupby("設計師")["vacancy_rate"]
+        .mean()
+        .reset_index()
+        .rename(columns={"vacancy_rate": "vacancy_rate_3m"})
     )
-    if total:
-        st.caption(f"顯示 {shown}/{total} 間分店（可在側邊欄調整前 N 名）")
+    recent_by_designer = recent_by_designer.merge(vacancy_recent, on="設計師", how="left")
+
+# 綜合分數（百分位加權）
+score_df = recent_by_designer.copy()
+if not score_df.empty:
+    score_df["repeat_pct"] = score_df["repeat_rate_3m"].rank(pct=True)
+    score_df["new_pct"] = score_df["new_customers_3m"].rank(pct=True)
+    if "vacancy_rate_3m" in score_df.columns:
+        score_df["vacancy_pct"] = 1 - score_df["vacancy_rate_3m"].rank(pct=True)
+    else:
+        score_df["vacancy_pct"] = np.nan
+
+    def calc_score(row):
+        weights = {"repeat_pct": 0.4, "new_pct": 0.35, "vacancy_pct": 0.25}
+        vals = {k: row[k] for k in weights if pd.notna(row[k])}
+        if not vals:
+            return np.nan
+        wsum = sum(weights[k] for k in vals.keys())
+        return sum(vals[k] * weights[k] for k in vals.keys()) / wsum * 100
+
+    score_df["score"] = score_df.apply(calc_score, axis=1)
+
+designer_select = st.selectbox("選擇師傅", designer_filter if designer_filter else [])
+mode = st.radio("模式", ["綜合分數", "四象限圖"], horizontal=True)
+
+selected_row = score_df[score_df["設計師"] == designer_select].copy()
+if selected_row.empty:
+    st.info("此師傅在最近 3 個月內沒有滿 60 天的新客資料。")
+else:
+    r = selected_row.iloc[0]
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("新客數(3M)", int(r["new_customers_3m"]))
+    c2.metric("流失率(3M)", f"{r['churn_rate_3m']:.2%}" if pd.notna(r["churn_rate_3m"]) else "-")
+    c3.metric("回訪率(3M)", f"{r['repeat_rate_3m']:.2%}" if pd.notna(r["repeat_rate_3m"]) else "-")
+    c4.metric("空窗率(3M)", f"{r['vacancy_rate_3m']:.2%}" if "vacancy_rate_3m" in r and pd.notna(r["vacancy_rate_3m"]) else "-")
+    c5.metric("綜合分數", f"{r['score']:.1f}" if pd.notna(r["score"]) else "-")
+
+    if mode == "綜合分數":
+        st.caption("綜合分數＝回訪率40% + 新客數35% + 空窗率25%（百分位加權）")
+    else:
+        plot_df = score_df.dropna(subset=["repeat_rate_3m", "new_customers_3m"]).copy()
+        if not plot_df.empty:
+            x_med = plot_df["repeat_rate_3m"].median()
+            y_med = plot_df["new_customers_3m"].median()
+            base = alt.Chart(plot_df).mark_circle(size=60, color="#9aa0a6").encode(
+                x=alt.X("repeat_rate_3m:Q", axis=alt.Axis(format="%", title="回訪率(3M)")),
+                y=alt.Y("new_customers_3m:Q", title="新客數(3M)"),
+                tooltip=["設計師", alt.Tooltip("repeat_rate_3m:Q", format=".2%"), "new_customers_3m:Q"],
+            )
+            highlight = alt.Chart(plot_df[plot_df["設計師"] == designer_select]).mark_circle(size=140, color="#e15759").encode(
+                x="repeat_rate_3m:Q",
+                y="new_customers_3m:Q",
+                tooltip=["設計師"],
+            )
+            vline = alt.Chart(pd.DataFrame({"x": [x_med]})).mark_rule(color="#666").encode(x="x:Q")
+            hline = alt.Chart(pd.DataFrame({"y": [y_med]})).mark_rule(color="#666").encode(y="y:Q")
+            st.altair_chart(base + vline + hline + highlight, use_container_width=True)
 
 st.subheader("師傅排行榜（Top 6）")
 st.caption("排行榜與新客相關指標皆以滿 60 天的新客 cohort 計算。")
