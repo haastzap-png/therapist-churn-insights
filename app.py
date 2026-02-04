@@ -26,7 +26,7 @@ with st.sidebar:
         "新客判定方式",
         ["帳單歷史首次結帳（建議）", "會員來店次數 = 1"],
     )
-    chart_top_n = st.number_input("圖表顯示前 N 名（0=全部）", min_value=0, max_value=100, value=15, step=1)
+    chart_top_n = st.number_input("圖表顯示前 N 名（0=全部）", min_value=0, max_value=100, value=0, step=1)
 
 st.write("""
 本工具會：
@@ -121,16 +121,16 @@ def minutes_to_hours(mins):
     units = int((mins - 1) // 30 + 1)
     return units * 0.5
 
-def render_bar_chart(df, category_col, value_col, title, color="#4e79a7", top_n=0, value_format="percent"):
+def render_bar_chart(df, category_col, value_col, title, color="#4e79a7", top_n=0, value_format="percent", orient="vertical"):
     if df.empty:
         st.info("沒有可顯示的資料。")
-        return
+        return 0, 0
     chart_df = df[[category_col, value_col]].dropna().copy()
     chart_df = chart_df.sort_values(value_col, ascending=False)
     if top_n and len(chart_df) > top_n:
         chart_df = chart_df.head(int(top_n))
     chart_df[value_col] = chart_df[value_col].astype(float)
-    height = min(520, 28 * len(chart_df) + 40)
+    height = 320 if orient == "vertical" else min(520, 28 * len(chart_df) + 40)
     if value_format == "percent":
         axis_format = "%"
         label_format = ".1%"
@@ -144,18 +144,30 @@ def render_bar_chart(df, category_col, value_col, title, color="#4e79a7", top_n=
         label_format = ".0f"
         tooltip = [category_col, alt.Tooltip(value_col, format=",.0f")]
 
-    base = alt.Chart(chart_df).encode(
-        y=alt.Y(f"{category_col}:N", sort="-x", title=""),
-        x=alt.X(f"{value_col}:Q", axis=alt.Axis(format=axis_format, title=title)),
-        tooltip=tooltip,
-    )
-    bars = base.mark_bar(color=color)
-    labels = base.mark_text(align="left", dx=4, color="#333").encode(
-        text=alt.Text(f"{value_col}:Q", format=label_format)
-    )
+    if orient == "vertical":
+        base = alt.Chart(chart_df).encode(
+            x=alt.X(f"{category_col}:N", sort="-y", title="", axis=alt.Axis(labelAngle=-30)),
+            y=alt.Y(f"{value_col}:Q", axis=alt.Axis(format=axis_format, title=title)),
+            tooltip=tooltip,
+        )
+        bars = base.mark_bar(color=color)
+        labels = base.mark_text(align="center", dy=-6, color="#333").encode(
+            text=alt.Text(f"{value_col}:Q", format=label_format)
+        )
+    else:
+        base = alt.Chart(chart_df).encode(
+            y=alt.Y(f"{category_col}:N", sort="-x", title=""),
+            x=alt.X(f"{value_col}:Q", axis=alt.Axis(format=axis_format, title=title)),
+            tooltip=tooltip,
+        )
+        bars = base.mark_bar(color=color)
+        labels = base.mark_text(align="left", dx=4, color="#333").encode(
+            text=alt.Text(f"{value_col}:Q", format=label_format)
+        )
     st.altair_chart((bars + labels).properties(height=height), use_container_width=True)
+    return len(chart_df), len(df)
 
-def render_rank_table(df, name_col, value_col, title, ascending, value_fmt, top_n=3):
+def render_rank_table(df, name_col, value_col, title, ascending, value_fmt, top_n=3, text_color=None):
     if df.empty:
         st.info("沒有可顯示的資料。")
         return
@@ -173,8 +185,11 @@ def render_rank_table(df, name_col, value_col, title, ascending, value_fmt, top_
     st.markdown(f"**{title}**")
     lines = []
     for idx, row in rank_df.iterrows():
-        lines.append(f"{idx+1}. {row[name_col]} — {formatter(row[value_col])}")
-    st.markdown("\n".join(lines))
+        line = f"{idx+1}. {row[name_col]} — {formatter(row[value_col])}"
+        if text_color:
+            line = f"<span style='color:{text_color}'>{line}</span>"
+        lines.append(line)
+    st.markdown("<br>".join(lines), unsafe_allow_html=True)
 
 def compute_return_days(new_first_df, checkout_lists):
     days = []
@@ -426,16 +441,6 @@ overall["repeat_rate_matured"] = (
     else None
 )
 
-st.subheader("摘要")
-col1, col2, col3, col4, col5 = st.columns(5)
-col1.metric("新客數", overall["new_customers"])
-col2.metric("成熟新客數", overall["matured_new_customers"])
-col3.metric("流失人數", overall["churned_matured"])
-col4.metric("流失率", f"{overall['churn_rate_matured']:.2%}" if overall["churn_rate_matured"] is not None else "-")
-col5.metric("回訪率", f"{overall['repeat_rate_matured']:.2%}" if overall["repeat_rate_matured"] is not None else "-")
-
-st.caption(f"資料截止時間：{end_date}")
-
 if has_store and store_monthly_avg is not None and not store_monthly_avg.empty:
     st.subheader("各分店摘要（每月平均）")
     for _, row in store_monthly_avg.iterrows():
@@ -446,54 +451,57 @@ if has_store and store_monthly_avg is not None and not store_monthly_avg.empty:
         avg_repeat = row["平均回訪率"]
         repeat_text = f"{avg_repeat:.2%}" if pd.notna(avg_repeat) else "-"
         st.write(
-            f"- {store_name}：每月平均新客 {avg_new:.1f}、流失 {avg_churn:.1f}、留住 {avg_retained:.1f}、回訪率 {repeat_text}"
+            f"- {store_name}：每月平均新客 {avg_new:.1f} 人、流失 {avg_churn:.1f} 人、留住 {avg_retained:.1f} 人、回訪率 {repeat_text}"
         )
 
-    c1, c2 = st.columns(2)
-    with c1:
-        render_bar_chart(
-            store_monthly_avg,
-            "分店",
-            "月平均新客數",
-            "每月平均新客",
-            color="#4e79a7",
-            top_n=chart_top_n,
-            value_format="number1",
-        )
-    with c2:
-        render_bar_chart(
-            store_monthly_avg,
-            "分店",
-            "月平均流失數",
-            "每月平均流失",
-            color="#e15759",
-            top_n=chart_top_n,
-            value_format="number1",
-        )
-    c3, c4 = st.columns(2)
-    with c3:
-        render_bar_chart(
-            store_monthly_avg,
-            "分店",
-            "月平均留住數",
-            "每月平均留住",
-            color="#59a14f",
-            top_n=chart_top_n,
-            value_format="number1",
-        )
-    with c4:
-        render_bar_chart(
-            store_monthly_avg,
-            "分店",
-            "平均回訪率",
-            "平均回訪率",
-            color="#76b7b2",
-            top_n=chart_top_n,
-            value_format="percent",
-        )
+    st.subheader("分店指標對比（每月平均）")
+    metric_long = store_monthly_avg.melt(
+        id_vars=["分店"],
+        value_vars=["月平均新客數", "月平均流失數", "月平均留住數"],
+        var_name="指標",
+        value_name="人數",
+    )
+    metric_long["指標"] = metric_long["指標"].replace(
+        {
+            "月平均新客數": "新客(人)",
+            "月平均流失數": "流失(人)",
+            "月平均留住數": "留住(人)",
+        }
+    )
+    line = alt.Chart(metric_long).mark_line(point=True).encode(
+        x=alt.X("指標:N", sort=["新客(人)", "流失(人)", "留住(人)"], title=""),
+        y=alt.Y("人數:Q", title="人數"),
+        color=alt.Color("分店:N", title="分店"),
+        tooltip=["分店", "指標", alt.Tooltip("人數:Q", format=",.1f")],
+    ).properties(height=280)
+    st.altair_chart(line, use_container_width=True)
+
+    st.subheader("各分店回訪率（圖）")
+    shown, total = render_bar_chart(
+        store_monthly_avg,
+        "分店",
+        "平均回訪率",
+        "回訪率",
+        color="#76b7b2",
+        top_n=chart_top_n,
+        value_format="percent",
+        orient="vertical",
+    )
+    if total:
+        st.caption(f"顯示 {shown}/{total} 間分店（可在側邊欄調整前 N 名）")
+
+st.subheader("總覽摘要")
+col1, col2, col3, col4, col5 = st.columns(5)
+col1.metric("新客數", overall["new_customers"])
+col2.metric("成熟新客數", overall["matured_new_customers"])
+col3.metric("流失人數", overall["churned_matured"])
+col4.metric("流失率", f"{overall['churn_rate_matured']:.2%}" if overall["churn_rate_matured"] is not None else "-")
+col5.metric("回訪率", f"{overall['repeat_rate_matured']:.2%}" if overall["repeat_rate_matured"] is not None else "-")
+
+st.caption(f"資料截止時間：{end_date}")
 
 st.subheader("各師傅流失率（圖）")
-render_bar_chart(
+shown, total = render_bar_chart(
     summary_by_designer.sort_values("churn_rate", ascending=False),
     "設計師",
     "churn_rate",
@@ -501,10 +509,13 @@ render_bar_chart(
     color="#e15759",
     top_n=chart_top_n,
     value_format="percent",
+    orient="vertical",
 )
+if total:
+    st.caption(f"顯示 {shown}/{total} 位師傅（僅列出成熟新客數 > 0）")
 
 st.subheader("各師傅回訪率（圖）")
-render_bar_chart(
+shown, total = render_bar_chart(
     summary_by_designer.sort_values("repeat_rate", ascending=False),
     "設計師",
     "repeat_rate",
@@ -512,11 +523,14 @@ render_bar_chart(
     color="#59a14f",
     top_n=chart_top_n,
     value_format="percent",
+    orient="vertical",
 )
+if total:
+    st.caption(f"顯示 {shown}/{total} 位師傅（僅列出成熟新客數 > 0）")
 
 if has_store:
     st.subheader("各分店流失率（圖）")
-    render_bar_chart(
+    shown, total = render_bar_chart(
         summary_by_store.sort_values("churn_rate", ascending=False),
         "分店",
         "churn_rate",
@@ -524,9 +538,12 @@ if has_store:
         color="#e15759",
         top_n=chart_top_n,
         value_format="percent",
+        orient="vertical",
     )
+    if total:
+        st.caption(f"顯示 {shown}/{total} 間分店（可在側邊欄調整前 N 名）")
     st.subheader("各分店回訪率（圖）")
-    render_bar_chart(
+    shown, total = render_bar_chart(
         summary_by_store.sort_values("repeat_rate", ascending=False),
         "分店",
         "repeat_rate",
@@ -534,94 +551,105 @@ if has_store:
         color="#59a14f",
         top_n=chart_top_n,
         value_format="percent",
+        orient="vertical",
+    )
+    if total:
+        st.caption(f"顯示 {shown}/{total} 間分店（可在側邊欄調整前 N 名）")
+
+st.subheader("師傅排行榜（Top 6）")
+col_good, col_watch = st.columns(2)
+
+with col_good:
+    st.markdown("<span style='color:#2ca02c;font-weight:700;'>表現較佳</span>", unsafe_allow_html=True)
+    render_rank_table(
+        designer_metrics.dropna(subset=["churn_rate"]),
+        "設計師",
+        "churn_rate",
+        "流失率最低",
+        ascending=True,
+        value_fmt="percent",
+        top_n=6,
+        text_color="#2ca02c",
+    )
+    render_rank_table(
+        designer_metrics.dropna(subset=["repeat_rate"]),
+        "設計師",
+        "repeat_rate",
+        "回訪率最高",
+        ascending=False,
+        value_fmt="percent",
+        top_n=6,
+        text_color="#2ca02c",
+    )
+    if vacancy_by_designer is None:
+        st.info("無法計算空窗率（缺少項目分鐘）。")
+    else:
+        render_rank_table(
+            designer_metrics.dropna(subset=["vacancy_rate"]),
+            "設計師",
+            "vacancy_rate",
+            "空窗率最低",
+            ascending=True,
+            value_fmt="percent",
+            top_n=6,
+            text_color="#2ca02c",
+        )
+    render_rank_table(
+        designer_metrics.dropna(subset=["new_customers"]),
+        "設計師",
+        "new_customers",
+        "新客數最多",
+        ascending=False,
+        value_fmt="int",
+        top_n=6,
+        text_color="#2ca02c",
     )
 
-st.subheader("師傅排行榜（Top 3）")
-tab_pos, tab_neg = st.tabs(["正面榜", "負面榜"])
-
-with tab_pos:
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
+with col_watch:
+    st.markdown("<span style='color:#d62728;font-weight:700;'>需關注</span>", unsafe_allow_html=True)
+    render_rank_table(
+        designer_metrics.dropna(subset=["churn_rate"]),
+        "設計師",
+        "churn_rate",
+        "流失率最高",
+        ascending=False,
+        value_fmt="percent",
+        top_n=6,
+        text_color="#d62728",
+    )
+    render_rank_table(
+        designer_metrics.dropna(subset=["repeat_rate"]),
+        "設計師",
+        "repeat_rate",
+        "回訪率最低",
+        ascending=True,
+        value_fmt="percent",
+        top_n=6,
+        text_color="#d62728",
+    )
+    if vacancy_by_designer is None:
+        st.info("無法計算空窗率（缺少項目分鐘）。")
+    else:
         render_rank_table(
-            designer_metrics.dropna(subset=["churn_rate"]),
+            designer_metrics.dropna(subset=["vacancy_rate"]),
             "設計師",
-            "churn_rate",
-            "流失率最低",
-            ascending=True,
-            value_fmt="percent",
-        )
-    with col2:
-        render_rank_table(
-            designer_metrics.dropna(subset=["repeat_rate"]),
-            "設計師",
-            "repeat_rate",
-            "回訪率最高",
+            "vacancy_rate",
+            "空窗率最高",
             ascending=False,
             value_fmt="percent",
+            top_n=6,
+            text_color="#d62728",
         )
-    with col3:
-        if vacancy_by_designer is None:
-            st.info("無法計算空窗率（缺少項目分鐘）。")
-        else:
-            render_rank_table(
-                designer_metrics.dropna(subset=["vacancy_rate"]),
-                "設計師",
-                "vacancy_rate",
-                "空窗率最低",
-                ascending=True,
-                value_fmt="percent",
-            )
-    with col4:
-        render_rank_table(
-            designer_metrics.dropna(subset=["new_customers"]),
-            "設計師",
-            "new_customers",
-            "新客數最多",
-            ascending=False,
-            value_fmt="int",
-        )
-
-with tab_neg:
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        render_rank_table(
-            designer_metrics.dropna(subset=["churn_rate"]),
-            "設計師",
-            "churn_rate",
-            "流失率最高",
-            ascending=False,
-            value_fmt="percent",
-        )
-    with col2:
-        render_rank_table(
-            designer_metrics.dropna(subset=["repeat_rate"]),
-            "設計師",
-            "repeat_rate",
-            "回訪率最低",
-            ascending=True,
-            value_fmt="percent",
-        )
-    with col3:
-        if vacancy_by_designer is None:
-            st.info("無法計算空窗率（缺少項目分鐘）。")
-        else:
-            render_rank_table(
-                designer_metrics.dropna(subset=["vacancy_rate"]),
-                "設計師",
-                "vacancy_rate",
-                "空窗率最高",
-                ascending=False,
-                value_fmt="percent",
-            )
-    with col4:
-        render_rank_table(
-            designer_metrics.dropna(subset=["new_customers"]),
-            "設計師",
-            "new_customers",
-            "新客數最少",
-            ascending=True,
-            value_fmt="int",
-        )
+    render_rank_table(
+        designer_metrics.dropna(subset=["new_customers"]),
+        "設計師",
+        "new_customers",
+        "新客數最少",
+        ascending=True,
+        value_fmt="int",
+        top_n=6,
+        text_color="#d62728",
+    )
 
 st.subheader("回訪時間分布")
 ret_series = compute_return_days(filtered_new_first, checkouts)
