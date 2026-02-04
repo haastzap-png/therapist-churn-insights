@@ -9,7 +9,7 @@ from io import BytesIO
 
 st.set_page_config(page_title="新客流失率分析", layout="wide")
 
-st.title("新客流失率分析（按師傅）")
+st.title("顧客關係經營分析")
 
 with st.sidebar:
     st.header("輸入")
@@ -30,11 +30,10 @@ with st.sidebar:
 
 st.write("""
 本工具會：
-- 預設以「帳單歷史首次結帳」判定新客（最穩）
-- 使用帳單檔（預設：服務 + 票券）
-- 以「首單後 60 天內未再結帳」計算流失
-- Repeat Rate = 首單後 T 天內有回訪的新客比例
-- 空窗率：依項目分鐘估算時長（1~30=0.5；31~60=1；61~90=1.5），月上限 168 小時
+- 以帳單歷史找出新客，並計算 60 天內是否回訪
+- 依分店/師傅呈現流失率、回訪率與空窗率
+- 提供圖表與排行榜，快速看出差異
+空窗率計算：依項目分鐘估算時長（1～30=0.5；31～60=1；61～90=1.5，以此類推），月上限 168 小時
 """)
 
 if not bill_files:
@@ -122,7 +121,7 @@ def minutes_to_hours(mins):
     units = int((mins - 1) // 30 + 1)
     return units * 0.5
 
-def render_bar_chart(df, category_col, value_col, title, color="#4e79a7", top_n=0):
+def render_bar_chart(df, category_col, value_col, title, color="#4e79a7", top_n=0, value_format="percent"):
     if df.empty:
         st.info("沒有可顯示的資料。")
         return
@@ -132,14 +131,27 @@ def render_bar_chart(df, category_col, value_col, title, color="#4e79a7", top_n=
         chart_df = chart_df.head(int(top_n))
     chart_df[value_col] = chart_df[value_col].astype(float)
     height = min(520, 28 * len(chart_df) + 40)
+    if value_format == "percent":
+        axis_format = "%"
+        label_format = ".1%"
+        tooltip = [category_col, alt.Tooltip(value_col, format=".2%")]
+    elif value_format == "number1":
+        axis_format = ",.1f"
+        label_format = ".1f"
+        tooltip = [category_col, alt.Tooltip(value_col, format=",.1f")]
+    else:
+        axis_format = ",.0f"
+        label_format = ".0f"
+        tooltip = [category_col, alt.Tooltip(value_col, format=",.0f")]
+
     base = alt.Chart(chart_df).encode(
         y=alt.Y(f"{category_col}:N", sort="-x", title=""),
-        x=alt.X(f"{value_col}:Q", axis=alt.Axis(format="%", title=title)),
-        tooltip=[category_col, alt.Tooltip(value_col, format=".2%")],
+        x=alt.X(f"{value_col}:Q", axis=alt.Axis(format=axis_format, title=title)),
+        tooltip=tooltip,
     )
     bars = base.mark_bar(color=color)
     labels = base.mark_text(align="left", dx=4, color="#333").encode(
-        text=alt.Text(f"{value_col}:Q", format=".1%")
+        text=alt.Text(f"{value_col}:Q", format=label_format)
     )
     st.altair_chart((bars + labels).properties(height=height), use_container_width=True)
 
@@ -150,14 +162,19 @@ def render_rank_table(df, name_col, value_col, title, ascending, value_fmt, top_
     rank_df = df[[name_col, value_col]].dropna().copy()
     rank_df = rank_df.sort_values(value_col, ascending=ascending).head(top_n)
     rank_df = rank_df.reset_index(drop=True)
-    rank_df.insert(0, "名次", rank_df.index + 1)
-    rank_df.rename(columns={name_col: "師傅", value_col: "數值"}, inplace=True)
     if value_fmt == "percent":
-        rank_df["數值"] = rank_df["數值"].map(lambda v: f"{v:.2%}")
+        formatter = lambda v: f"{v:.2%}"
     elif value_fmt == "int":
-        rank_df["數值"] = rank_df["數值"].map(lambda v: f"{int(v)}")
+        formatter = lambda v: f"{int(v)}"
+    elif value_fmt == "number1":
+        formatter = lambda v: f"{v:.1f}"
+    else:
+        formatter = lambda v: f"{v}"
     st.markdown(f"**{title}**")
-    st.table(rank_df)
+    lines = []
+    for idx, row in rank_df.iterrows():
+        lines.append(f"{idx+1}. {row[name_col]} — {formatter(row[value_col])}")
+    st.markdown("\n".join(lines))
 
 def compute_return_days(new_first_df, checkout_lists):
     days = []
@@ -328,6 +345,43 @@ new_by_designer = (
 )
 designer_metrics = summary_by_designer.merge(new_by_designer, on="設計師", how="outer")
 
+# Store monthly summary (average per month)
+store_monthly_avg = None
+if has_store:
+    store_month = filtered_new_first.copy()
+    store_month["month"] = store_month["結帳操作時間"].dt.to_period("M").astype(str)
+    month_new = (
+        store_month.groupby(["分店", "month"])["phone_key"]
+        .count()
+        .reset_index(name="new_customers")
+    )
+    month_matured = store_month[store_month["matured"]].copy()
+    month_matured = (
+        month_matured.groupby(["分店", "month"])
+        .agg(matured_new_customers=("phone_key", "count"), churned=("churn", "sum"))
+        .reset_index()
+    )
+    month_summary = month_new.merge(month_matured, on=["分店", "month"], how="left")
+    month_summary["matured_new_customers"] = month_summary["matured_new_customers"].fillna(0)
+    month_summary["churned"] = month_summary["churned"].fillna(0)
+    month_summary["retained"] = month_summary["matured_new_customers"] - month_summary["churned"]
+    month_summary["repeat_rate"] = np.where(
+        month_summary["matured_new_customers"] > 0,
+        month_summary["retained"] / month_summary["matured_new_customers"],
+        np.nan,
+    )
+    store_monthly_avg = (
+        month_summary.groupby("分店")
+        .agg(
+            月平均新客數=("new_customers", "mean"),
+            月平均流失數=("churned", "mean"),
+            月平均留住數=("retained", "mean"),
+            平均回訪率=("repeat_rate", "mean"),
+            月份數=("month", "nunique"),
+        )
+        .reset_index()
+    )
+
 # Vacancy metrics (monthly, 168h cap)
 vacancy_monthly = None
 vacancy_by_designer = None
@@ -382,8 +436,62 @@ col5.metric("回訪率", f"{overall['repeat_rate_matured']:.2%}" if overall["rep
 
 st.caption(f"資料截止時間：{end_date}")
 
-st.subheader("各師傅流失率")
-st.dataframe(summary_by_designer.sort_values("churn_rate", ascending=False), use_container_width=True)
+if has_store and store_monthly_avg is not None and not store_monthly_avg.empty:
+    st.subheader("各分店摘要（每月平均）")
+    for _, row in store_monthly_avg.iterrows():
+        store_name = row["分店"]
+        avg_new = row["月平均新客數"]
+        avg_churn = row["月平均流失數"]
+        avg_retained = row["月平均留住數"]
+        avg_repeat = row["平均回訪率"]
+        repeat_text = f"{avg_repeat:.2%}" if pd.notna(avg_repeat) else "-"
+        st.write(
+            f"- {store_name}：每月平均新客 {avg_new:.1f}、流失 {avg_churn:.1f}、留住 {avg_retained:.1f}、回訪率 {repeat_text}"
+        )
+
+    c1, c2 = st.columns(2)
+    with c1:
+        render_bar_chart(
+            store_monthly_avg,
+            "分店",
+            "月平均新客數",
+            "每月平均新客",
+            color="#4e79a7",
+            top_n=chart_top_n,
+            value_format="number1",
+        )
+    with c2:
+        render_bar_chart(
+            store_monthly_avg,
+            "分店",
+            "月平均流失數",
+            "每月平均流失",
+            color="#e15759",
+            top_n=chart_top_n,
+            value_format="number1",
+        )
+    c3, c4 = st.columns(2)
+    with c3:
+        render_bar_chart(
+            store_monthly_avg,
+            "分店",
+            "月平均留住數",
+            "每月平均留住",
+            color="#59a14f",
+            top_n=chart_top_n,
+            value_format="number1",
+        )
+    with c4:
+        render_bar_chart(
+            store_monthly_avg,
+            "分店",
+            "平均回訪率",
+            "平均回訪率",
+            color="#76b7b2",
+            top_n=chart_top_n,
+            value_format="percent",
+        )
+
 st.subheader("各師傅流失率（圖）")
 render_bar_chart(
     summary_by_designer.sort_values("churn_rate", ascending=False),
@@ -392,6 +500,7 @@ render_bar_chart(
     "流失率",
     color="#e15759",
     top_n=chart_top_n,
+    value_format="percent",
 )
 
 st.subheader("各師傅回訪率（圖）")
@@ -402,11 +511,10 @@ render_bar_chart(
     "回訪率",
     color="#59a14f",
     top_n=chart_top_n,
+    value_format="percent",
 )
 
 if has_store:
-    st.subheader("各分店流失率")
-    st.dataframe(summary_by_store.sort_values("churn_rate", ascending=False), use_container_width=True)
     st.subheader("各分店流失率（圖）")
     render_bar_chart(
         summary_by_store.sort_values("churn_rate", ascending=False),
@@ -415,6 +523,7 @@ if has_store:
         "流失率",
         color="#e15759",
         top_n=chart_top_n,
+        value_format="percent",
     )
     st.subheader("各分店回訪率（圖）")
     render_bar_chart(
@@ -424,9 +533,8 @@ if has_store:
         "回訪率",
         color="#59a14f",
         top_n=chart_top_n,
+        value_format="percent",
     )
-    st.subheader("分店 x 師傅流失率")
-    st.dataframe(summary_by_store_designer.sort_values("churn_rate", ascending=False), use_container_width=True)
 
 st.subheader("師傅排行榜（Top 3）")
 tab_pos, tab_neg = st.tabs(["正面榜", "負面榜"])
@@ -545,7 +653,79 @@ else:
     )
     st.altair_chart(hist + rules + labels, use_container_width=True)
 
-st.subheader("流失名單")
+st.subheader("詳細表格")
+st.caption("依照你的篩選條件，以下是完整明細表格。")
+store_table = None
+store_designer_table = None
+display_vacancy = None
+
+# 師傅彙總
+st.markdown("**師傅彙總**")
+designer_table = designer_metrics.rename(
+    columns={
+        "設計師": "師傅",
+        "new_customers": "新客數",
+        "matured_new_customers": "成熟新客數",
+        "churned": "流失數",
+        "churn_rate": "流失率",
+        "repeat_rate": "回訪率",
+        "vacancy_rate": "平均空窗率",
+    }
+)
+designer_table = designer_table[[c for c in designer_table.columns if c in [
+    "師傅","新客數","成熟新客數","流失數","流失率","回訪率","平均空窗率"
+]]]
+st.dataframe(designer_table.sort_values("流失率", ascending=False), use_container_width=True)
+
+# 分店彙總
+if has_store:
+    st.markdown("**分店彙總**")
+    store_table = summary_by_store.rename(
+        columns={
+            "分店": "分店",
+            "matured_new_customers": "成熟新客數",
+            "churned": "流失數",
+            "churn_rate": "流失率",
+            "repeat_rate": "回訪率",
+        }
+    )
+    st.dataframe(store_table.sort_values("流失率", ascending=False), use_container_width=True)
+
+    st.markdown("**分店 x 師傅彙總**")
+    store_designer_table = summary_by_store_designer.rename(
+        columns={
+            "分店": "分店",
+            "設計師": "師傅",
+            "matured_new_customers": "成熟新客數",
+            "churned": "流失數",
+            "churn_rate": "流失率",
+            "repeat_rate": "回訪率",
+        }
+    )
+    st.dataframe(store_designer_table.sort_values("流失率", ascending=False), use_container_width=True)
+
+# 空窗率（月，168 小時上限）
+st.markdown("**空窗率（月，168 小時上限）**")
+if vacancy_monthly is None:
+    st.warning("帳單檔缺少 '項目' 欄位，無法估算服務時數與空窗率。")
+else:
+    display_vacancy = vacancy_monthly.copy()
+    if has_store and store_filter is not None:
+        display_vacancy = display_vacancy[display_vacancy["分店"].isin(store_filter)]
+    display_vacancy = display_vacancy[display_vacancy["設計師"].isin(designer_filter)]
+    display_vacancy = display_vacancy.rename(
+        columns={
+            "分店": "分店",
+            "設計師": "師傅",
+            "month": "月份",
+            "duration_hours": "服務時數",
+            "vacancy_rate": "空窗率",
+        }
+    )
+    st.dataframe(display_vacancy.sort_values(["月份", "師傅"]), use_container_width=True)
+
+# 流失名單
+st.markdown("**流失名單**")
 show_churned_only = st.checkbox("只看流失者", value=True)
 
 if show_churned_only:
@@ -560,35 +740,27 @@ detail = detail[detail["設計師"].isin(designer_filter)]
 detail_display = detail.copy()
 detail_display["是否滿期"] = detail_display["matured"].map({True: "是", False: "否"})
 detail_display["是否流失"] = detail_display["churn"].map({True: "是", False: "否"})
+detail_display["電話"] = detail_display["phone_key"]
+detail_display = detail_display.rename(columns={"設計師": "師傅", "結帳操作時間": "首單時間"})
 
-display_cols = ["phone_key", name_col, "分店", "設計師", "結帳操作時間", "是否滿期", "是否流失"]
+display_cols = ["電話", name_col, "分店", "師傅", "首單時間", "是否滿期", "是否流失"]
 display_cols = [c for c in display_cols if c in detail_display.columns]
-st.dataframe(detail_display[display_cols].sort_values("結帳操作時間"), use_container_width=True)
-
-# Vacancy rate (monthly, 168h cap)
-st.subheader("空窗率（月，168 小時上限）")
-if vacancy_monthly is None:
-    st.warning("帳單檔缺少 '項目' 欄位，無法估算服務時數與空窗率。")
-else:
-    display_vacancy = vacancy_monthly.copy()
-    if has_store and store_filter is not None:
-        display_vacancy = display_vacancy[display_vacancy["分店"].isin(store_filter)]
-    display_vacancy = display_vacancy[display_vacancy["設計師"].isin(designer_filter)]
-    st.dataframe(display_vacancy.sort_values(["month", "設計師"]), use_container_width=True)
+st.dataframe(detail_display[display_cols].sort_values("首單時間"), use_container_width=True)
 
 # Download Excel
 st.subheader("下載報表")
 
 output = BytesIO()
 with pd.ExcelWriter(output, engine="openpyxl") as writer:
-    pd.DataFrame([overall]).to_excel(writer, index=False, sheet_name="summary")
-    summary_by_designer.to_excel(writer, index=False, sheet_name="by_designer")
-    if has_store:
-        summary_by_store.to_excel(writer, index=False, sheet_name="by_store")
-        summary_by_store_designer.to_excel(writer, index=False, sheet_name="by_store_designer")
-    detail_display[display_cols].to_excel(writer, index=False, sheet_name="detail")
-    if vacancy_monthly is not None:
-        vacancy_monthly.to_excel(writer, index=False, sheet_name="vacancy_monthly")
+    pd.DataFrame([overall]).to_excel(writer, index=False, sheet_name="總覽")
+    designer_table.to_excel(writer, index=False, sheet_name="師傅彙總")
+    if store_table is not None:
+        store_table.to_excel(writer, index=False, sheet_name="分店彙總")
+    if store_designer_table is not None:
+        store_designer_table.to_excel(writer, index=False, sheet_name="分店師傅彙總")
+    detail_display[display_cols].to_excel(writer, index=False, sheet_name="流失名單")
+    if display_vacancy is not None:
+        display_vacancy.to_excel(writer, index=False, sheet_name="空窗率(月)")
 
 st.download_button(
     label="下載 Excel",
