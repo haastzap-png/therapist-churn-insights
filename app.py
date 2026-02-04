@@ -532,8 +532,8 @@ if has_store and store_monthly_avg is not None and not store_monthly_avg.empty:
         y=alt.Y("人數:Q", title="人數"),
         color=alt.Color("指標:N", title="指標"),
         tooltip=["分店", "指標", alt.Tooltip("人數:Q", format=",.1f")],
-    )
-    small = small_base.facet(column="分店:N", columns=3).properties(height=180)
+    ).properties(height=180)
+    small = small_base.facet(column="分店:N", columns=3)
     st.altair_chart(small, use_container_width=True)
 
     st.subheader("各分店回訪率（圖）")
