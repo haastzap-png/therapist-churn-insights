@@ -433,6 +433,16 @@ overall["repeat_rate_matured"] = (
     else None
 )
 
+st.subheader("總覽摘要")
+col1, col2, col3, col4, col5 = st.columns(5)
+col1.metric("滿60天新客數", overall["matured_new_customers"])
+col2.metric("流失人數", overall["churned_matured"])
+col3.metric("留住人數", overall["retained_matured"])
+col4.metric("流失率", f"{overall['churn_rate_matured']:.2%}" if overall["churn_rate_matured"] is not None else "-")
+col5.metric("回訪率", f"{overall['repeat_rate_matured']:.2%}" if overall["repeat_rate_matured"] is not None else "-")
+
+st.caption(f"資料截止時間：{end_date}")
+
 if has_store and store_monthly_avg is not None and not store_monthly_avg.empty:
     st.subheader("各分店摘要（每月平均）")
     st.caption("僅計入滿 60 天的新客 cohort（最嚴謹）。")
@@ -511,19 +521,9 @@ if has_store and store_monthly_avg is not None and not store_monthly_avg.empty:
         st.altair_chart(stack + total_text, use_container_width=True)
 
     if chart_top_n and chart_top_n > 0:
-        st.caption(f"分店比較圖僅顯示前 {int(chart_top_n)} 名（依每月平均新客數排序）。Small Multiples 顯示全部分店。")
+        st.caption(f"分店比較圖僅顯示前 {int(chart_top_n)} 名（依每月平均新客數排序）。")
 
     # 移除 Small Multiples 依需求
-
-st.subheader("總覽摘要")
-col1, col2, col3, col4, col5 = st.columns(5)
-col1.metric("滿60天新客數", overall["matured_new_customers"])
-col2.metric("流失人數", overall["churned_matured"])
-col3.metric("留住人數", overall["retained_matured"])
-col4.metric("流失率", f"{overall['churn_rate_matured']:.2%}" if overall["churn_rate_matured"] is not None else "-")
-col5.metric("回訪率", f"{overall['repeat_rate_matured']:.2%}" if overall["repeat_rate_matured"] is not None else "-")
-
-st.caption(f"資料截止時間：{end_date}")
 
 st.subheader("個別師傅綜合狀態（最近 3 個月）")
 st.caption("僅計入滿 60 天的新客 cohort。")
@@ -541,12 +541,12 @@ recent_by_designer = (
     )
     .reset_index()
 )
-recent_by_designer["churn_rate_3m"] = np.where(
+recent_by_designer["retained_3m"] = recent_by_designer["new_customers_3m"] - recent_by_designer["churned_3m"]
+recent_by_designer["repeat_rate_3m"] = np.where(
     recent_by_designer["new_customers_3m"] > 0,
-    recent_by_designer["churned_3m"] / recent_by_designer["new_customers_3m"],
+    recent_by_designer["retained_3m"] / recent_by_designer["new_customers_3m"],
     np.nan,
 )
-recent_by_designer["repeat_rate_3m"] = 1 - recent_by_designer["churn_rate_3m"]
 
 # 空窗率（最近三個月平均）
 vacancy_recent = None
@@ -592,13 +592,13 @@ else:
     r = selected_row.iloc[0]
     c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("新客數(3M)", int(r["new_customers_3m"]))
-    c2.metric("流失率(3M)", f"{r['churn_rate_3m']:.2%}" if pd.notna(r["churn_rate_3m"]) else "-")
+    c2.metric("留住人數(3M)", int(r["retained_3m"]))
     c3.metric("回訪率(3M)", f"{r['repeat_rate_3m']:.2%}" if pd.notna(r["repeat_rate_3m"]) else "-")
     c4.metric("空窗率(3M)", f"{r['vacancy_rate_3m']:.2%}" if "vacancy_rate_3m" in r and pd.notna(r["vacancy_rate_3m"]) else "-")
     c5.metric("綜合分數", f"{r['score']:.1f}" if pd.notna(r["score"]) else "-")
 
     if mode == "綜合分數":
-        st.caption("綜合分數＝回訪率40% + 新客數35% + 空窗率25%（百分位加權）")
+        st.caption("綜合分數（升階參考）＝回訪率40% + 新客數35% + 空窗率25%（百分位加權）")
     else:
         plot_df = score_df.dropna(subset=["repeat_rate_3m", "new_customers_3m"]).copy()
         if not plot_df.empty:
@@ -618,27 +618,27 @@ else:
             hline = alt.Chart(pd.DataFrame({"y": [y_med]})).mark_rule(color="#666").encode(y="y:Q")
             st.altair_chart(base + vline + hline + highlight, use_container_width=True)
 
-st.subheader("師傅排行榜（Top 6）")
-st.caption("排行榜與新客相關指標皆以滿 60 天的新客 cohort 計算。")
+st.subheader("師傅排行榜（Top 6，最近 3 個月）")
+st.caption("僅計入滿 60 天的新客 cohort。")
 col_good, col_watch = st.columns(2)
 
 with col_good:
     st.markdown("<span style='color:#2ca02c;font-weight:700;'>表現較佳</span>", unsafe_allow_html=True)
     render_rank_table(
-        designer_metrics.dropna(subset=["churn_rate"]),
+        score_df.dropna(subset=["score"]),
         "設計師",
-        "churn_rate",
-        "流失率最低",
-        ascending=True,
-        value_fmt="percent",
+        "score",
+        "綜合分數最高",
+        ascending=False,
+        value_fmt="number1",
         top_n=6,
         text_color="#2ca02c",
     )
     render_rank_table(
-        designer_metrics.dropna(subset=["repeat_rate"]),
+        score_df.dropna(subset=["repeat_rate_3m"]),
         "設計師",
-        "repeat_rate",
-        "回訪率最高",
+        "repeat_rate_3m",
+        "回訪率最高(3M)",
         ascending=False,
         value_fmt="percent",
         top_n=6,
@@ -648,20 +648,20 @@ with col_good:
         st.info("無法計算空窗率（缺少項目分鐘）。")
     else:
         render_rank_table(
-            designer_metrics.dropna(subset=["vacancy_rate"]),
+            score_df.dropna(subset=["vacancy_rate_3m"]),
             "設計師",
-            "vacancy_rate",
-            "空窗率最低",
+            "vacancy_rate_3m",
+            "空窗率最低(3M)",
             ascending=True,
             value_fmt="percent",
             top_n=6,
             text_color="#2ca02c",
         )
     render_rank_table(
-        designer_metrics.dropna(subset=["new_customers"]),
+        score_df.dropna(subset=["new_customers_3m"]),
         "設計師",
-        "new_customers",
-        "新客數最多",
+        "new_customers_3m",
+        "新客數最多(3M)",
         ascending=False,
         value_fmt="int",
         top_n=6,
@@ -671,20 +671,20 @@ with col_good:
 with col_watch:
     st.markdown("<span style='color:#d62728;font-weight:700;'>需關注</span>", unsafe_allow_html=True)
     render_rank_table(
-        designer_metrics.dropna(subset=["churn_rate"]),
+        score_df.dropna(subset=["score"]),
         "設計師",
-        "churn_rate",
-        "流失率最高",
-        ascending=False,
-        value_fmt="percent",
+        "score",
+        "綜合分數最低",
+        ascending=True,
+        value_fmt="number1",
         top_n=6,
         text_color="#d62728",
     )
     render_rank_table(
-        designer_metrics.dropna(subset=["repeat_rate"]),
+        score_df.dropna(subset=["repeat_rate_3m"]),
         "設計師",
-        "repeat_rate",
-        "回訪率最低",
+        "repeat_rate_3m",
+        "回訪率最低(3M)",
         ascending=True,
         value_fmt="percent",
         top_n=6,
@@ -694,20 +694,20 @@ with col_watch:
         st.info("無法計算空窗率（缺少項目分鐘）。")
     else:
         render_rank_table(
-            designer_metrics.dropna(subset=["vacancy_rate"]),
+            score_df.dropna(subset=["vacancy_rate_3m"]),
             "設計師",
-            "vacancy_rate",
-            "空窗率最高",
+            "vacancy_rate_3m",
+            "空窗率最高(3M)",
             ascending=False,
             value_fmt="percent",
             top_n=6,
             text_color="#d62728",
         )
     render_rank_table(
-        designer_metrics.dropna(subset=["new_customers"]),
+        score_df.dropna(subset=["new_customers_3m"]),
         "設計師",
-        "new_customers",
-        "新客數最少",
+        "new_customers_3m",
+        "新客數最少(3M)",
         ascending=True,
         value_fmt="int",
         top_n=6,
