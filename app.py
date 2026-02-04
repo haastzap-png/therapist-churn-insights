@@ -527,14 +527,13 @@ if has_store and store_monthly_avg is not None and not store_monthly_avg.empty:
             "月平均留住數": "留住(人)",
         }
     )
-    small = alt.Chart(metric_long_all).mark_bar().encode(
+    small_base = alt.Chart(metric_long_all).mark_bar().encode(
         x=alt.X("指標:N", sort=["新客(人)", "流失(人)", "留住(人)"], title=""),
         y=alt.Y("人數:Q", title="人數"),
         color=alt.Color("指標:N", title="指標"),
         tooltip=["分店", "指標", alt.Tooltip("人數:Q", format=",.1f")],
-    ).facet(
-        column=alt.Column("分店:N", title="", columns=3)
-    ).properties(height=180)
+    )
+    small = small_base.facet(column="分店:N", columns=3).properties(height=180)
     st.altair_chart(small, use_container_width=True)
 
     st.subheader("各分店回訪率（圖）")
