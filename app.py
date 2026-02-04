@@ -305,11 +305,11 @@ matured = new_first[new_first["matured"]].copy()
 with st.sidebar:
     st.header("篩選")
     if has_store:
-        store_options = sorted([s for s in new_first["分店"].dropna().unique()])
+        store_options = sorted([s for s in merged["分店"].dropna().unique()])
         store_filter = st.multiselect("分店", store_options, default=store_options)
     else:
         store_filter = None
-    designer_options = sorted([s for s in new_first["設計師"].dropna().unique()])
+    designer_options = sorted([s for s in merged["設計師"].dropna().unique()])
     exclude_designers = st.multiselect("排除師傅", designer_options, default=[])
     include_options = [d for d in designer_options if d not in set(exclude_designers)]
     designer_filter = st.multiselect("師傅", include_options, default=include_options)
@@ -320,6 +320,27 @@ if has_store and store_filter is not None:
 filtered_new_first = filtered_new_first[filtered_new_first["設計師"].isin(designer_filter)]
 
 filtered_matured = filtered_new_first[filtered_new_first["matured"]].copy()
+
+# 師傅回指 cohort：同一位師傅的首次來訪（new-to-therapist）
+tx_filtered = merged.copy()
+if has_store and store_filter is not None:
+    tx_filtered = tx_filtered[tx_filtered["分店"].isin(store_filter)]
+tx_filtered = tx_filtered[tx_filtered["設計師"].isin(designer_filter)]
+tx_filtered = tx_filtered.sort_values("結帳操作時間")
+
+therapist_groups = tx_filtered.groupby(["phone_key", "設計師"], as_index=False)
+first_visits = therapist_groups.first()
+visit_lists = therapist_groups["結帳操作時間"].apply(list).reset_index(name="visit_times")
+therapist_first = first_visits.merge(visit_lists, on=["phone_key", "設計師"], how="left")
+therapist_first = therapist_first.rename(columns={"結帳操作時間": "first_time"})
+
+def days_to_n(times, n):
+    if not isinstance(times, list) or len(times) < n:
+        return np.nan
+    return (times[n - 1] - times[0]).days
+
+therapist_first["days_to_2nd"] = therapist_first["visit_times"].apply(lambda t: days_to_n(t, 2))
+therapist_first["days_to_3rd"] = therapist_first["visit_times"].apply(lambda t: days_to_n(t, 3))
 
 summary_by_designer = (
     filtered_matured.groupby("設計師")
@@ -526,27 +547,78 @@ if has_store and store_monthly_avg is not None and not store_monthly_avg.empty:
     # 移除 Small Multiples 依需求
 
 st.subheader("個別師傅綜合狀態（最近 3 個月）")
-st.caption("僅計入滿 60 天的新客 cohort。")
+st.caption("回指口徑：同一位師傅。僅計入滿 T 天的新客 cohort。")
 
-# 最近三個月的師傅指標
+# 回指時間分布（第2次 / 第3次） → 用來決定 T2/T3
+dist2 = therapist_first["days_to_2nd"].dropna()
+dist3 = therapist_first["days_to_3rd"].dropna()
+
+if dist2.empty:
+    st.info("目前沒有可計算的第2次回指資料。")
+    t2_default = 60
+else:
+    p50_2 = dist2.quantile(0.5)
+    p70_2 = dist2.quantile(0.7)
+    p80_2 = dist2.quantile(0.8)
+    p90_2 = dist2.quantile(0.9)
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("第2次 P50(天)", f"{p50_2:.0f}")
+    c2.metric("第2次 P70(天)", f"{p70_2:.0f}")
+    c3.metric("第2次 P80(天)", f"{p80_2:.0f}")
+    c4.metric("第2次 P90(天)", f"{p90_2:.0f}")
+    t2_default = int(round(p70_2))
+
+if dist3.empty:
+    st.info("目前沒有可計算的第3次回指資料。")
+    t3_default = 120
+else:
+    p50_3 = dist3.quantile(0.5)
+    p70_3 = dist3.quantile(0.7)
+    p80_3 = dist3.quantile(0.8)
+    p90_3 = dist3.quantile(0.9)
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("第3次 P50(天)", f"{p50_3:.0f}")
+    c2.metric("第3次 P70(天)", f"{p70_3:.0f}")
+    c3.metric("第3次 P80(天)", f"{p80_3:.0f}")
+    c4.metric("第3次 P90(天)", f"{p90_3:.0f}")
+    t3_default = int(round(p70_3))
+
+t2_days = st.number_input("第2次回指判定天數（T2）", min_value=1, max_value=365, value=int(t2_default), step=1)
+t3_days = st.number_input("第3次回指判定天數（T3）", min_value=1, max_value=365, value=int(t3_default), step=1)
+
+therapist_first["matured_2"] = therapist_first["first_time"] + pd.Timedelta(days=int(t2_days)) <= end_date
+therapist_first["matured_3"] = therapist_first["first_time"] + pd.Timedelta(days=int(t3_days)) <= end_date
+therapist_first["repeat2"] = therapist_first["days_to_2nd"] <= int(t2_days)
+therapist_first["repeat3"] = therapist_first["days_to_3rd"] <= int(t3_days)
+
+# 最近三個月的師傅指標（回指口徑）
 end_ts = pd.to_datetime(end_date)
 start_ts = end_ts - pd.DateOffset(months=3)
-recent = filtered_matured[filtered_matured["結帳操作時間"] >= start_ts].copy()
+recent = therapist_first[therapist_first["first_time"] >= start_ts].copy()
+
+recent2 = recent[recent["matured_2"]].copy()
+recent3 = recent[recent["matured_3"]].copy()
 
 recent_by_designer = (
-    recent.groupby("設計師")
+    recent2.groupby("設計師")
     .agg(
         new_customers_3m=("phone_key", "count"),
-        churned_3m=("churn", "sum"),
+        repeat2_count=("repeat2", "sum"),
     )
     .reset_index()
 )
-recent_by_designer["retained_3m"] = recent_by_designer["new_customers_3m"] - recent_by_designer["churned_3m"]
 recent_by_designer["repeat_rate_3m"] = np.where(
     recent_by_designer["new_customers_3m"] > 0,
-    recent_by_designer["retained_3m"] / recent_by_designer["new_customers_3m"],
+    recent_by_designer["repeat2_count"] / recent_by_designer["new_customers_3m"],
     np.nan,
 )
+
+deep_repeat = (
+    recent3.groupby("設計師")
+    .agg(deep_repeat_rate_3m=("repeat3", "mean"), deep_n=("repeat3", "count"))
+    .reset_index()
+)
+recent_by_designer = recent_by_designer.merge(deep_repeat, on="設計師", how="left")
 
 # 空窗率（最近三個月平均）
 vacancy_recent = None
@@ -587,25 +659,25 @@ mode = st.radio("模式", ["綜合分數", "四象限圖"], horizontal=True)
 
 selected_row = score_df[score_df["設計師"] == designer_select].copy()
 if selected_row.empty:
-    st.info("此師傅在最近 3 個月內沒有滿 60 天的新客資料。")
+    st.info("此師傅在最近 3 個月內沒有滿 T2 的新客資料。")
 else:
     r = selected_row.iloc[0]
     c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("新客數(3M)", int(r["new_customers_3m"]))
-    c2.metric("留住人數(3M)", int(r["retained_3m"]))
-    c3.metric("回訪率(3M)", f"{r['repeat_rate_3m']:.2%}" if pd.notna(r["repeat_rate_3m"]) else "-")
+    c2.metric("回指率(第2次)", f"{r['repeat_rate_3m']:.2%}" if pd.notna(r["repeat_rate_3m"]) else "-")
+    c3.metric("深度回指率(第3次)", f"{r['deep_repeat_rate_3m']:.2%}" if pd.notna(r.get("deep_repeat_rate_3m")) else "-")
     c4.metric("空窗率(3M)", f"{r['vacancy_rate_3m']:.2%}" if "vacancy_rate_3m" in r and pd.notna(r["vacancy_rate_3m"]) else "-")
     c5.metric("綜合分數", f"{r['score']:.1f}" if pd.notna(r["score"]) else "-")
 
     if mode == "綜合分數":
-        st.caption("綜合分數（升階參考）＝回訪率40% + 新客數35% + 空窗率25%（百分位加權）")
+        st.caption("綜合分數（升階參考）＝回指率(第2次)40% + 新客數35% + 空窗率25%（百分位加權）")
     else:
         plot_df = score_df.dropna(subset=["repeat_rate_3m", "new_customers_3m"]).copy()
         if not plot_df.empty:
             x_med = plot_df["repeat_rate_3m"].median()
             y_med = plot_df["new_customers_3m"].median()
             base = alt.Chart(plot_df).mark_circle(size=60, color="#9aa0a6").encode(
-                x=alt.X("repeat_rate_3m:Q", axis=alt.Axis(format="%", title="回訪率(3M)")),
+                x=alt.X("repeat_rate_3m:Q", axis=alt.Axis(format="%", title="回指率(第2次)")),
                 y=alt.Y("new_customers_3m:Q", title="新客數(3M)"),
                 tooltip=["設計師", alt.Tooltip("repeat_rate_3m:Q", format=".2%"), "new_customers_3m:Q"],
             )
@@ -617,6 +689,63 @@ else:
             vline = alt.Chart(pd.DataFrame({"x": [x_med]})).mark_rule(color="#666").encode(x="x:Q")
             hline = alt.Chart(pd.DataFrame({"y": [y_med]})).mark_rule(color="#666").encode(y="y:Q")
             st.altair_chart(base + vline + hline + highlight, use_container_width=True)
+
+    # 成長/下滑曲線（cohort 月）
+    st.subheader("師傅成長/下滑曲線（回指率）")
+    cohort = therapist_first[therapist_first["設計師"] == designer_select].copy()
+    cohort["cohort_month"] = cohort["first_time"].dt.to_period("M").dt.to_timestamp()
+    cohort2 = cohort[cohort["matured_2"]].copy()
+    cohort3 = cohort[cohort["matured_3"]].copy()
+
+    m2 = (
+        cohort2.groupby("cohort_month")
+        .agg(rate2=("repeat2", "mean"), n2=("repeat2", "count"))
+        .reset_index()
+    )
+    m3 = (
+        cohort3.groupby("cohort_month")
+        .agg(rate3=("repeat3", "mean"), n3=("repeat3", "count"))
+        .reset_index()
+    )
+
+    trend = pd.merge(m2, m3, on="cohort_month", how="outer").sort_values("cohort_month")
+    trend_long = trend.melt(
+        id_vars=["cohort_month"],
+        value_vars=["rate2", "rate3"],
+        var_name="指標",
+        value_name="回指率",
+    )
+    trend_long["指標"] = trend_long["指標"].replace(
+        {"rate2": "回指率(第2次)", "rate3": "深度回指率(第3次)"}
+    )
+
+    if trend_long["回指率"].notna().any():
+        line = alt.Chart(trend_long.dropna(subset=["回指率"])).mark_line(point=True).encode(
+            x=alt.X("cohort_month:T", title="新客首次找師傅的月份"),
+            y=alt.Y("回指率:Q", axis=alt.Axis(format="%"), title="回指率"),
+            color=alt.Color("指標:N", title=""),
+            tooltip=["cohort_month:T", "指標", alt.Tooltip("回指率:Q", format=".2%")],
+        ).properties(height=280)
+        st.altair_chart(line, use_container_width=True)
+
+        # 近3期 vs 前3期
+        def last_vs_prev(series):
+            s = series.dropna()
+            if len(s) < 6:
+                return None
+            last3 = s.iloc[-3:].mean()
+            prev3 = s.iloc[-6:-3].mean()
+            return last3 - prev3
+
+        rate2_series = trend["rate2"].dropna()
+        rate3_series = trend["rate3"].dropna()
+        d2 = last_vs_prev(rate2_series)
+        d3 = last_vs_prev(rate3_series)
+        c1, c2 = st.columns(2)
+        c1.metric("回指率(第2次) 近3期變化", f"{d2:+.2%}" if d2 is not None else "樣本不足")
+        c2.metric("深度回指率(第3次) 近3期變化", f"{d3:+.2%}" if d3 is not None else "樣本不足")
+    else:
+        st.info("目前沒有足夠的回指資料繪製趨勢。")
 
 st.subheader("師傅排行榜（Top 6，最近 3 個月）")
 st.caption("僅計入滿 60 天的新客 cohort。")
@@ -750,22 +879,26 @@ store_table = None
 store_designer_table = None
 display_vacancy = None
 
-# 師傅彙總
-st.markdown("**師傅彙總**")
-designer_table = designer_metrics.rename(
-    columns={
-        "設計師": "師傅",
-        "new_customers": "滿60天新客數",
-        "churned": "流失數",
-        "churn_rate": "流失率",
-        "repeat_rate": "回訪率",
-        "vacancy_rate": "平均空窗率",
-    }
-)
-designer_table = designer_table[[c for c in designer_table.columns if c in [
-    "師傅","滿60天新客數","流失數","流失率","回訪率","平均空窗率"
-]]]
-st.dataframe(designer_table.sort_values("流失率", ascending=False), use_container_width=True)
+# 師傅彙總（近3月回指）
+st.markdown("**師傅彙總（近 3 月 / 回指）**")
+if score_df is None or score_df.empty:
+    st.info("目前沒有足夠的近 3 月回指資料。")
+    designer_table = None
+else:
+    designer_table = score_df.rename(
+        columns={
+            "設計師": "師傅",
+            "new_customers_3m": "新客數(3M)",
+            "repeat_rate_3m": "回指率(第2次)",
+            "deep_repeat_rate_3m": "深度回指率(第3次)",
+            "vacancy_rate_3m": "空窗率(3M)",
+            "score": "綜合分數",
+        }
+    )
+    designer_table = designer_table[[c for c in designer_table.columns if c in [
+        "師傅","新客數(3M)","回指率(第2次)","深度回指率(第3次)","空窗率(3M)","綜合分數"
+    ]]]
+    st.dataframe(designer_table.sort_values("綜合分數", ascending=False), use_container_width=True)
 
 # 分店彙總
 if has_store:
@@ -850,7 +983,8 @@ overall_df = pd.DataFrame([{
 }])
 with pd.ExcelWriter(output, engine="openpyxl") as writer:
     overall_df.to_excel(writer, index=False, sheet_name="總覽")
-    designer_table.to_excel(writer, index=False, sheet_name="師傅彙總")
+    if designer_table is not None:
+        designer_table.to_excel(writer, index=False, sheet_name="師傅彙總(3M)")
     if store_table is not None:
         store_table.to_excel(writer, index=False, sheet_name="分店彙總")
     if store_designer_table is not None:
