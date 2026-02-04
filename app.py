@@ -7,7 +7,7 @@ import re
 from datetime import timedelta
 from io import BytesIO
 
-st.set_page_config(page_title="新客流失率分析", layout="wide")
+st.set_page_config(page_title="顧客關係經營分析", layout="wide")
 
 st.title("顧客關係經營分析")
 
@@ -32,7 +32,7 @@ with st.sidebar:
 st.write("""
 本工具會：
 - 以帳單歷史找出新客，並計算 60 天內是否回訪
-- 依分店/師傅呈現流失率、回訪率與空窗率
+- 依分店/師傅呈現流失率、回訪率、回指率與空窗率
 - 提供圖表與排行榜，快速看出差異
 空窗率計算：依項目分鐘估算時長（1～30=0.5；31～60=1；61～90=1.5，以此類推），月上限 168 小時
 """)
@@ -328,9 +328,13 @@ if has_store and store_filter is not None:
 tx_filtered = tx_filtered[tx_filtered["設計師"].isin(designer_filter)]
 tx_filtered = tx_filtered.sort_values("結帳操作時間")
 
-therapist_groups = tx_filtered.groupby(["phone_key", "設計師"], as_index=False)
-first_visits = therapist_groups.first()
-visit_lists = therapist_groups["結帳操作時間"].apply(list).reset_index(name="visit_times")
+first_visits = tx_filtered.groupby(["phone_key", "設計師"], as_index=False).first()
+visit_lists = (
+    tx_filtered.groupby(["phone_key", "設計師"])["結帳操作時間"]
+    .agg(list)
+    .reset_index()
+    .rename(columns={"結帳操作時間": "visit_times"})
+)
 therapist_first = first_visits.merge(visit_lists, on=["phone_key", "設計師"], how="left")
 therapist_first = therapist_first.rename(columns={"結帳操作時間": "first_time"})
 
@@ -376,7 +380,7 @@ if has_store:
     summary_by_store_designer["churn_rate"] = (
         summary_by_store_designer["churned"] / summary_by_store_designer["matured_new_customers"]
     )
-summary_by_store_designer["repeat_rate"] = 1 - summary_by_store_designer["churn_rate"]
+    summary_by_store_designer["repeat_rate"] = 1 - summary_by_store_designer["churn_rate"]
 
 # Designer-level metrics for rankings (僅計入滿 60 天新客)
 designer_metrics = summary_by_designer.copy()
@@ -767,7 +771,7 @@ with col_good:
         score_df.dropna(subset=["repeat_rate_3m"]),
         "設計師",
         "repeat_rate_3m",
-        "回訪率最高(3M)",
+        "回指率最高(3M)",
         ascending=False,
         value_fmt="percent",
         top_n=6,
@@ -813,7 +817,7 @@ with col_watch:
         score_df.dropna(subset=["repeat_rate_3m"]),
         "設計師",
         "repeat_rate_3m",
-        "回訪率最低(3M)",
+        "回指率最低(3M)",
         ascending=True,
         value_fmt="percent",
         top_n=6,
