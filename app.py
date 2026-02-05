@@ -76,40 +76,51 @@ h1 {
 div[data-testid="stAppViewContainer"] section.main,
 div[data-testid="stAppViewContainer"] .main {
   color: var(--ink) !important;
+  --text-color: var(--ink);
+  --secondary-text-color: var(--muted);
 }
-div[data-testid="stAppViewContainer"] section.main .stMarkdown,
-div[data-testid="stAppViewContainer"] section.main .stMarkdown *,
-div[data-testid="stAppViewContainer"] .main .stMarkdown,
-div[data-testid="stAppViewContainer"] .main .stMarkdown * {
-  color: var(--ink) !important;
-  opacity: 1 !important;
-}
-div[data-testid="stAppViewContainer"] section.main .stCaption,
-div[data-testid="stAppViewContainer"] section.main .stCaption *,
-div[data-testid="stAppViewContainer"] .main .stCaption,
-div[data-testid="stAppViewContainer"] .main .stCaption * {
-  color: var(--muted) !important;
-  opacity: 1 !important;
-}
-div[data-testid="stAppViewContainer"] section.main label,
+div[data-testid="stAppViewContainer"] .main h1,
+div[data-testid="stAppViewContainer"] .main h2,
+div[data-testid="stAppViewContainer"] .main h3,
+div[data-testid="stAppViewContainer"] .main h4,
+div[data-testid="stAppViewContainer"] .main h5,
+div[data-testid="stAppViewContainer"] .main h6,
+div[data-testid="stAppViewContainer"] .main p,
+div[data-testid="stAppViewContainer"] .main li,
 div[data-testid="stAppViewContainer"] .main label {
   color: var(--ink) !important;
+  -webkit-text-fill-color: var(--ink) !important;
   opacity: 1 !important;
 }
-div[data-testid="stAppViewContainer"] section.main div[data-testid="stMetricValue"],
+div[data-testid="stAppViewContainer"] .main div[data-testid="stMarkdownContainer"] p,
+div[data-testid="stAppViewContainer"] .main div[data-testid="stMarkdownContainer"] li,
+div[data-testid="stAppViewContainer"] .main div[data-testid="stMarkdownContainer"] span {
+  color: var(--ink) !important;
+  -webkit-text-fill-color: var(--ink) !important;
+  opacity: 1 !important;
+}
+div[data-testid="stAppViewContainer"] .main .stCaption,
+div[data-testid="stAppViewContainer"] .main .stCaption *,
+div[data-testid="stAppViewContainer"] .main div[data-testid="stCaptionContainer"] * {
+  color: var(--muted) !important;
+  -webkit-text-fill-color: var(--muted) !important;
+  opacity: 1 !important;
+}
 div[data-testid="stAppViewContainer"] .main div[data-testid="stMetricValue"] {
   color: var(--ink) !important;
+  -webkit-text-fill-color: var(--ink) !important;
   opacity: 1 !important;
 }
-div[data-testid="stAppViewContainer"] section.main div[data-testid="stMetricLabel"],
-div[data-testid="stAppViewContainer"] .main div[data-testid="stMetricLabel"] {
-  color: var(--muted) !important;
-  opacity: 1 !important;
-}
-div[data-testid="stAppViewContainer"] section.main div[data-testid="stMetricDelta"],
+div[data-testid="stAppViewContainer"] .main div[data-testid="stMetricLabel"],
 div[data-testid="stAppViewContainer"] .main div[data-testid="stMetricDelta"] {
   color: var(--muted) !important;
+  -webkit-text-fill-color: var(--muted) !important;
   opacity: 1 !important;
+}
+div[data-testid="stAppViewContainer"] .main button,
+div[data-testid="stAppViewContainer"] .main button * {
+  color: inherit !important;
+  -webkit-text-fill-color: inherit !important;
 }
 div[data-testid="stSidebar"] {
   background: #faf7f2;
@@ -132,7 +143,7 @@ div[data-testid="stMetric"] label {
   background: rgba(43, 122, 120, 0.08);
   border: 1px solid rgba(43, 122, 120, 0.2);
   border-radius: 12px;
-  color: #1f314f;
+  color: #1f314f !important;
   font-size: 0.95rem;
 }
 .stCaption {
