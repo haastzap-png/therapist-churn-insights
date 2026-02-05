@@ -176,6 +176,13 @@ div[data-testid="stMetric"] label {
   font-weight: 700;
   line-height: 1.1;
 }
+.metric-suffix {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--muted);
+  margin-left: 10px;
+  vertical-align: middle;
+}
 .metric-sub {
   margin-top: 8px;
   font-size: 0.85rem;
@@ -473,9 +480,13 @@ def render_rank_bar(df, name_col, value_col, title, ascending, value_format, col
     height = max(260, 26 * len(chart_df) + 40)
     st.altair_chart((bars + labels).properties(height=height), use_container_width=True)
 
-def metric_card(label, value, help_text, subtext=None, tag_text=None, tag_bg=None, tag_color=None):
+def metric_card(label, value, help_text, subtext=None, tag_text=None, tag_bg=None, tag_color=None, value_suffix=None):
     safe_label = html.escape(str(label))
     safe_value = html.escape(str(value))
+    suffix_html = ""
+    if value_suffix:
+        safe_suffix = html.escape(str(value_suffix))
+        suffix_html = f'<span class="metric-suffix">{safe_suffix}</span>'
     safe_help = html.escape(str(help_text), quote=True)
     sub_html = ""
     if subtext:
@@ -492,7 +503,7 @@ def metric_card(label, value, help_text, subtext=None, tag_text=None, tag_bg=Non
         f"""
         <div class="metric-card">
           <div class="metric-title">{safe_label}</div>
-          <div class="metric-value">{safe_value}</div>
+          <div class="metric-value">{safe_value}{suffix_html}</div>
           {sub_html}
           <div class="metric-help" data-tooltip="{safe_help}">!</div>
         </div>
@@ -665,7 +676,7 @@ def reliability_factor(n, n0=30):
     n = pd.to_numeric(n, errors="coerce")
     return np.where((n > 0) & pd.notna(n), np.minimum(1, np.sqrt(n / n0)), np.nan)
 
-def score_insight(df, score_col, value, context_label):
+def score_insight(df, score_col, value, tag_mode="generic"):
     if pd.isna(value):
         return None, None, None, None
     s = pd.to_numeric(df[score_col], errors="coerce").dropna()
@@ -674,19 +685,25 @@ def score_insight(df, score_col, value, context_label):
     pct = (s <= value).sum() / len(s) * 100
     rank = int((s > value).sum() + 1)
     total = int(len(s))
-    delta = value - s.mean()
-    if delta >= 0:
-        delta_text = f"高於{context_label} +{delta:.1f}"
-    else:
-        delta_text = f"低於{context_label} {delta:.1f}"
-    subtext = f"P{pct:.0f}・第{rank}/{total}・{delta_text}"
+    rank_text = f"{rank}/{total}"
+
+    # 標籤：用同一套門檻（依分位數）決定顏色，但可以針對不同指標換文字
+    if tag_mode == "acq":
+        if pct >= 80:
+            return rank_text, "新客非常多", "#e8f5e9", "#2ca02c"
+        if pct >= 50:
+            return rank_text, "新客偏多", "#e8f1fb", "#4e79a7"
+        if pct >= 20:
+            return rank_text, "新客偏少", "#fff4e5", "#f2b134"
+        return rank_text, "新客非常少", "#fdecea", "#d62728"
+
     if pct >= 80:
-        return subtext, "優秀", "#e8f5e9", "#2ca02c"
+        return rank_text, "優秀", "#e8f5e9", "#2ca02c"
     if pct >= 50:
-        return subtext, "良好", "#e8f1fb", "#4e79a7"
+        return rank_text, "良好", "#e8f1fb", "#4e79a7"
     if pct >= 20:
-        return subtext, "普通", "#fff4e5", "#f2b134"
-    return subtext, "需改善", "#fdecea", "#d62728"
+        return rank_text, "普通", "#fff4e5", "#f2b134"
+    return rank_text, "需改善", "#fdecea", "#d62728"
 
 def add_regular_metrics(df, list_map, key_cols, baseline_col):
     regular_counts = []
@@ -1423,85 +1440,91 @@ else:
     else:
         r = selected_row.iloc[0]
         st.markdown("**戰力指標**")
-        context_label = "分店平均" if has_store and store_filter is not None and len(store_filter) == 1 else "篩選平均"
         score_cols = st.columns(4)
         with score_cols[0]:
-            sub, tag, bg, color = score_insight(designer_metrics_filtered, "overall_score", r.get("overall_score"), context_label)
+            rank_txt, tag, bg, color = score_insight(designer_metrics_filtered, "overall_score", r.get("overall_score"))
             metric_card(
                 "戰力指標(0-100)",
                 f"{r['overall_score']:.1f}" if pd.notna(r.get("overall_score")) else "-",
                 "六大區塊（基本、新客獲取量、新客留存、熟客轉化、熟客經營、合作穩定度）等權合成；各指標先做 Z-score 標準化，再依樣本數修正。",
-                subtext=sub,
+                subtext="整體分數：把六項數值先各自換成同一把尺，再合在一起。數字越高，代表整體狀況越好、越有競爭力（用來跟同批人比較）。",
                 tag_text=tag,
                 tag_bg=bg,
                 tag_color=color,
+                value_suffix=rank_txt,
             )
         with score_cols[1]:
-            sub, tag, bg, color = score_insight(designer_metrics_filtered, "basic_score_0100", r.get("basic_score_0100"), context_label)
+            rank_txt, tag, bg, color = score_insight(designer_metrics_filtered, "basic_score_0100", r.get("basic_score_0100"))
             metric_card(
                 "基本狀態",
                 f"{r['basic_score_0100']:.1f}" if pd.notna(r.get("basic_score_0100")) else "-",
                 "每月平均有單天數、近3月有單天數、總單量、空窗率（反向）之 Z-score 平均，並依樣本數修正。",
-                subtext=sub,
+                subtext="看這位師傅最近是否「正常有在上班、接單、排班/客量是否穩定」：近 3 個月的有單天數、總單量、空窗率等組合。數字越高，代表近期更穩定。",
                 tag_text=tag,
                 tag_bg=bg,
                 tag_color=color,
+                value_suffix=rank_txt,
             )
         with score_cols[2]:
-            sub, tag, bg, color = score_insight(designer_metrics_filtered, "new_acq_score_0100", r.get("new_acq_score_0100"), context_label)
+            rank_txt, tag, bg, color = score_insight(designer_metrics_filtered, "new_acq_score_0100", r.get("new_acq_score_0100"), tag_mode="acq")
             metric_card(
                 "新客獲取量",
                 f"{r['new_acq_score_0100']:.1f}" if pd.notna(r.get("new_acq_score_0100")) else "-",
                 "新客占比（新客數/總單量）與新客/有單天數的 Z-score 平均，並依樣本數修正。",
-                subtext=sub,
+                subtext="看近 3 個月「新客進來的量」：同時看新客占比與每天帶來的新客。數字越高，代表近期新客進來相對更多（偏結果量，不完全等於能力，會受排班/空窗影響）。",
                 tag_text=tag,
                 tag_bg=bg,
                 tag_color=color,
+                value_suffix=rank_txt,
             )
         with score_cols[3]:
-            sub, tag, bg, color = score_insight(designer_metrics_filtered, "new_ret_score_0100", r.get("new_ret_score_0100"), context_label)
+            rank_txt, tag, bg, color = score_insight(designer_metrics_filtered, "new_ret_score_0100", r.get("new_ret_score_0100"))
             metric_card(
                 "新客留存力",
                 f"{r['new_ret_score_0100']:.1f}" if pd.notna(r.get("new_ret_score_0100")) else "-",
                 "新客留存率（= 1 - 流失率）的 Z-score，並依樣本數修正。",
-                subtext=sub,
+                subtext="看「新客回不回來」：新客在 60 天內是否回到同分店的比例（留存率＝1−流失率）。數字越高，代表新客更容易在短期內回來。（注意：是同分店回店，不限定同師傅。）",
                 tag_text=tag,
                 tag_bg=bg,
                 tag_color=color,
+                value_suffix=rank_txt,
             )
         score_cols2 = st.columns(3)
         with score_cols2[0]:
-            sub, tag, bg, color = score_insight(designer_metrics_filtered, "convert_score_0100", r.get("convert_score_0100"), context_label)
+            rank_txt, tag, bg, color = score_insight(designer_metrics_filtered, "convert_score_0100", r.get("convert_score_0100"))
             metric_card(
                 "熟客轉化力",
                 f"{r['convert_score_0100']:.1f}" if pd.notna(r.get("convert_score_0100")) else "-",
                 "熟客化率與平均達標天數（反向）的 Z-score 平均，並依樣本數修正。",
-                subtext=sub,
+                subtext="看「把客人養成熟客的能力/速度」：同分店同師傅，180 天內是否能累積到 ≥5 次，以及平均多久達到第 5 次。數字越高，代表更容易、也更快把客人養成穩定熟客。",
                 tag_text=tag,
                 tag_bg=bg,
                 tag_color=color,
+                value_suffix=rank_txt,
             )
         with score_cols2[1]:
-            sub, tag, bg, color = score_insight(designer_metrics_filtered, "retain_score_0100", r.get("retain_score_0100"), context_label)
+            rank_txt, tag, bg, color = score_insight(designer_metrics_filtered, "retain_score_0100", r.get("retain_score_0100"))
             metric_card(
                 "熟客經營力",
                 f"{r['retain_score_0100']:.1f}" if pd.notna(r.get("retain_score_0100")) else "-",
                 "熟客維持率與後180天平均回訪次數的 Z-score 平均，並依樣本數修正。",
-                subtext=sub,
+                subtext="看「熟客養成後能不能維持」：成為熟客後的下一個 180 天內，是否仍有 ≥3 次回訪，以及後 180 天的平均回訪頻率。數字越高，代表熟客更有黏著度、更常回來。",
                 tag_text=tag,
                 tag_bg=bg,
                 tag_color=color,
+                value_suffix=rank_txt,
             )
         with score_cols2[2]:
-            sub, tag, bg, color = score_insight(designer_metrics_filtered, "stability_score_0100", r.get("stability_score_0100"), context_label)
+            rank_txt, tag, bg, color = score_insight(designer_metrics_filtered, "stability_score_0100", r.get("stability_score_0100"))
             metric_card(
                 "合作穩定度",
                 f"{r['stability_score_0100']:.1f}" if pd.notna(r.get("stability_score_0100")) else "-",
                 "近 6 個月工時 CV（或出勤 CV）之 Z-score（反向），並依樣本月數修正。",
-                subtext=sub,
+                subtext="看「工作量起伏大不大」：近 6 個月每月工時（或有單天數）的波動程度，越穩定分數越高。數字越高，代表月與月之間更穩定。",
                 tag_text=tag,
                 tag_bg=bg,
                 tag_color=color,
+                value_suffix=rank_txt,
             )
         section_gap()
 
