@@ -232,7 +232,7 @@ def render_bar_chart(df, category_col, value_col, title, color="#2b7a78", top_n=
     if top_n and len(chart_df) > top_n:
         chart_df = chart_df.head(int(top_n))
     chart_df[value_col] = chart_df[value_col].astype(float)
-    height = 320 if orient == "vertical" else min(520, 28 * len(chart_df) + 40)
+    height = 320 if orient == "vertical" else max(320, 26 * len(chart_df) + 40)
     if value_format == "percent":
         axis_format = "%"
         label_format = ".1%"
@@ -267,6 +267,7 @@ def render_bar_chart(df, category_col, value_col, title, color="#2b7a78", top_n=
                 f"{category_col}:N",
                 sort=alt.SortField(field=value_col, order="ascending" if ascending else "descending"),
                 title="",
+                axis=alt.Axis(labelLimit=0, labelOverlap=False),
             ),
             x=alt.X(f"{value_col}:Q", axis=alt.Axis(format=axis_format, title=title)),
             tooltip=tooltip,
@@ -304,6 +305,7 @@ def render_rank_bar(df, name_col, value_col, title, ascending, value_format, col
             f"{name_col}:N",
             sort=alt.SortField(field=value_col, order="ascending" if ascending else "descending"),
             title="",
+            axis=alt.Axis(labelLimit=0, labelOverlap=False),
         ),
         x=alt.X(f"{value_col}:Q", axis=alt.Axis(format=axis_format, title=title)),
         tooltip=tooltip,
@@ -312,7 +314,7 @@ def render_rank_bar(df, name_col, value_col, title, ascending, value_format, col
     labels = base.mark_text(align="left", dx=4, color="#333").encode(
         text=alt.Text(f"{value_col}:Q", format=label_format)
     )
-    height = min(420, 28 * len(chart_df) + 40)
+    height = max(260, 26 * len(chart_df) + 40)
     st.altair_chart((bars + labels).properties(height=height), use_container_width=True)
 
 
