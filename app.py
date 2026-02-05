@@ -129,7 +129,7 @@ div[data-testid="stMetric"] label {
 )
 
 st.title("顧客關係經營分析")
-st.markdown('<div class="section-note">圖表優先，表格放在最後。指標固定：新客流失率、熟客經營力、新客經營力、空窗率、合作穩定度。</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-note">圖表優先，表格放在最後。指標固定：出勤狀態、新客流失、熟客化、熟客維持、空窗率、合作穩定度。</div>', unsafe_allow_html=True)
 
 with st.sidebar:
     st.header("輸入")
@@ -147,9 +147,12 @@ with st.sidebar:
 st.write("""
 本工具會：
 - 以全品牌帳單歷史找出新客，並計算 60 天內是否回店（同分店）
-- 依分店/師傅呈現新客流失率、熟客經營力、新客經營力、空窗率與合作穩定度
+- 依分店/師傅呈現出勤狀態、新客流失、熟客化與熟客維持、空窗率與合作穩定度
 - 提供圖表與排行榜，快速看出差異
-回指判定：T2=30 天、T3=60 天（固定）
+熟客定義：同分店同師傅，180 天內消費 ≥5 次
+熟客維持：熟客達成後 180 天內回訪 ≥3 次
+出勤狀態：上月是否有單、近 3 月有單月份數、連續無單月數
+回指判定：T2=30 天、T3=60 天（固定，作為輔助指標）
 空窗率計算：依項目分鐘估算時長（1～30=0.5；31～60=1；61～90=1.5，以此類推），月上限 168 小時
 """)
 
@@ -160,6 +163,11 @@ if not bill_files:
 CHURN_DAYS = 60
 T2_DAYS = 30
 T3_DAYS = 60
+REGULAR_DAYS = 180
+REGULAR_VISITS = 5
+RETENTION_DAYS = 180
+RETENTION_VISITS = 3
+RELATIONSHIP_COHORT_MONTHS = 12
 
 @st.cache_data(show_spinner=False)
 def load_member(file):
@@ -425,13 +433,6 @@ with st.sidebar:
     exclude_designers = st.multiselect("排除師傅", designer_options, default=[])
     include_options = [d for d in designer_options if d not in set(exclude_designers)]
     designer_filter = st.multiselect("師傅", include_options, default=include_options)
-    min_new_repeat_base = st.number_input(
-        "新客回指率最小樣本數(滿30天)",
-        min_value=0,
-        value=5,
-        step=1,
-        help="低於此樣本數的師傅將不納入新客回指率排名/圖表。設為 0 表示不排除。",
-    )
 
 merged_store = merged.copy()
 if has_store and store_filter is not None:
@@ -503,10 +504,71 @@ def add_repeat_flags(df, list_map, key_cols, first_col, t2, t3):
     df["repeat3"] = repeat3
     return df
 
+def add_regular_metrics(df, list_map, key_cols, baseline_col):
+    regular_counts = []
+    regular_achieved = []
+    regular_dates = []
+    post_regular_visits = []
+    retention_achieved = []
+    for _, row in df.iterrows():
+        key = tuple(row[c] for c in key_cols)
+        baseline_time = row[baseline_col]
+        times = list_map.get(key, [])
+        times = [t for t in times if pd.notna(t)]
+        times.sort()
+        after = [t for t in times if t >= baseline_time]
+        window_end = baseline_time + timedelta(days=REGULAR_DAYS)
+        within = [t for t in after if t <= window_end]
+        count_within = len(within)
+        regular_counts.append(count_within)
+        achieved = count_within >= REGULAR_VISITS
+        regular_achieved.append(achieved)
+        if achieved:
+            reg_date = within[REGULAR_VISITS - 1]
+        else:
+            reg_date = pd.NaT
+        regular_dates.append(reg_date)
+        if achieved:
+            retention_end = reg_date + timedelta(days=RETENTION_DAYS)
+            post = [t for t in after if t > reg_date and t <= retention_end]
+            post_count = len(post)
+            post_regular_visits.append(post_count)
+            retention_achieved.append(post_count >= RETENTION_VISITS)
+        else:
+            post_regular_visits.append(np.nan)
+            retention_achieved.append(np.nan)
+    df["regular_count_180"] = regular_counts
+    df["regular_achieved"] = regular_achieved
+    df["regular_date"] = regular_dates
+    df["post_regular_visits_180"] = post_regular_visits
+    df["retention_achieved"] = retention_achieved
+    return df
+
 checkouts_by_phone_store_designer = (
     merged_store.groupby(["phone_key", "分店", "設計師"])["結帳操作時間"]
     .apply(list)
 )
+
+# 建立師傅關係起點（同分店同師傅第一次）
+relationship_first = (
+    merged_store.sort_values("結帳操作時間")
+    .groupby(["phone_key", "分店", "設計師"], as_index=False)
+    .first()
+    .rename(columns={"結帳操作時間": "baseline_time"})
+)
+if not relationship_first.empty:
+    relationship_first = add_regular_metrics(
+        relationship_first,
+        checkouts_by_phone_store_designer,
+        ["phone_key", "分店", "設計師"],
+        "baseline_time",
+    )
+    relationship_first["regular_matured_180"] = (
+        relationship_first["baseline_time"] + pd.Timedelta(days=REGULAR_DAYS) <= end_date
+    )
+    relationship_first["retention_matured_180"] = (
+        relationship_first["regular_date"] + pd.Timedelta(days=RETENTION_DAYS) <= end_date
+    )
 
 new_first_store["matured_2"] = new_first_store["結帳操作時間"] + pd.Timedelta(days=T2_DAYS) <= end_date
 new_first_store["matured_3"] = new_first_store["結帳操作時間"] + pd.Timedelta(days=T3_DAYS) <= end_date
@@ -522,6 +584,7 @@ new_first_store = add_repeat_flags(
 end_ts = pd.to_datetime(end_date)
 start_ts_3m = end_ts - pd.DateOffset(months=3)
 start_ts_6m = end_ts - pd.DateOffset(months=6)
+start_ts_12m = end_ts - pd.DateOffset(months=RELATIONSHIP_COHORT_MONTHS)
 
 # 新客經營力（近 3 個月）
 new_recent = new_first_store[new_first_store["結帳操作時間"] >= start_ts_3m].copy()
@@ -533,6 +596,9 @@ new_churn_by_designer = (
         new_churned_3m=("churn", "sum"),
     )
     .reset_index()
+)
+new_churn_by_designer["new_retained_3m"] = (
+    new_churn_by_designer["new_customers_3m"] - new_churn_by_designer["new_churned_3m"]
 )
 new_churn_by_designer["new_churn_rate_3m"] = np.where(
     new_churn_by_designer["new_customers_3m"] > 0,
@@ -638,6 +704,98 @@ orders_summary = (
     .reset_index(name="total_orders_3m")
 )
 designer_metrics = designer_metrics.merge(orders_summary, on="設計師", how="left")
+
+# 出勤狀態（以月份計）
+orders_monthly = merged_store.copy()
+orders_monthly["month_period"] = orders_monthly["結帳操作時間"].dt.to_period("M")
+end_month = end_ts.to_period("M")
+start_month_3m = end_month - 2
+recent_months = orders_monthly[orders_monthly["month_period"] >= start_month_3m]
+active_months_3m = (
+    recent_months.groupby("設計師")["month_period"]
+    .nunique()
+    .reset_index(name="active_months_3m")
+)
+prev_month = end_month - 1
+orders_prev = orders_monthly[orders_monthly["month_period"] == prev_month]
+has_order_prev = (
+    orders_prev.groupby("設計師")
+    .size()
+    .reset_index(name="orders_prev_month")
+)
+has_order_prev["has_order_prev_month"] = has_order_prev["orders_prev_month"] > 0
+last_month = (
+    orders_monthly.groupby("設計師")["month_period"]
+    .max()
+    .reset_index(name="last_order_month")
+)
+last_month["months_since_last"] = last_month["last_order_month"].apply(lambda p: end_month.ordinal - p.ordinal)
+
+attendance_summary = (
+    active_months_3m
+    .merge(has_order_prev[["設計師", "has_order_prev_month"]], on="設計師", how="left")
+    .merge(last_month[["設計師", "months_since_last"]], on="設計師", how="left")
+)
+designer_metrics = designer_metrics.merge(attendance_summary, on="設計師", how="left")
+
+# 熟客化/熟客維持（近 12 個月關係起點）
+regular_summary = None
+retention_summary = None
+if not relationship_first.empty:
+    rel_recent = relationship_first[relationship_first["baseline_time"] >= start_ts_12m].copy()
+    regular_base = rel_recent[rel_recent["regular_matured_180"]].copy()
+    if not regular_base.empty:
+        regular_base["regular_achieved_int"] = regular_base["regular_achieved"].fillna(False).astype(int)
+        regular_base["regular_days"] = (regular_base["regular_date"] - regular_base["baseline_time"]).dt.days
+        regular_summary = (
+            regular_base.groupby("設計師")
+            .agg(
+                regular_base_180=("phone_key", "count"),
+                regular_achieved_180=("regular_achieved_int", "sum"),
+                regular_days_avg_180=("regular_days", "mean"),
+            )
+            .reset_index()
+        )
+        regular_summary["regular_rate_180"] = np.where(
+            regular_summary["regular_base_180"] > 0,
+            regular_summary["regular_achieved_180"] / regular_summary["regular_base_180"],
+            np.nan,
+        )
+        designer_metrics = designer_metrics.merge(regular_summary, on="設計師", how="left")
+
+    retention_base = rel_recent[
+        (rel_recent["regular_achieved"] == True) & (rel_recent["retention_matured_180"])
+    ].copy()
+    if not retention_base.empty:
+        retention_base["retention_achieved_int"] = retention_base["retention_achieved"].fillna(False).astype(int)
+        retention_summary = (
+            retention_base.groupby("設計師")
+            .agg(
+                retention_base_180=("phone_key", "count"),
+                retention_achieved_180=("retention_achieved_int", "sum"),
+                post_regular_visits_avg_180=("post_regular_visits_180", "mean"),
+            )
+            .reset_index()
+        )
+        retention_summary["retention_rate_180"] = np.where(
+            retention_summary["retention_base_180"] > 0,
+            retention_summary["retention_achieved_180"] / retention_summary["retention_base_180"],
+            np.nan,
+        )
+        designer_metrics = designer_metrics.merge(retention_summary, on="設計師", how="left")
+
+    for col in [
+        "regular_rate_180",
+        "regular_base_180",
+        "regular_achieved_180",
+        "regular_days_avg_180",
+        "retention_rate_180",
+        "retention_base_180",
+        "retention_achieved_180",
+        "post_regular_visits_avg_180",
+    ]:
+        if col not in designer_metrics.columns:
+            designer_metrics[col] = np.nan
 
 # 指定率（近 3 個月）
 if "is_requested" in merged_store.columns and merged_store["is_requested"].notna().any():
@@ -896,7 +1054,8 @@ if has_store and store_monthly_avg is not None and not store_monthly_avg.empty:
 
     # 移除 Small Multiples 依需求
 
-st.subheader("師傅指標比較（最近 3 個月）")
+st.subheader("師傅指標比較")
+st.caption("新客流失/空窗/總單量以近 3 個月計；熟客化/維持以近 12 個月 cohort 且滿 180 天計。")
 metric_df = designer_metrics_filtered.copy()
 service_cv = metric_df["service_hours_cv_6m"] if "service_hours_cv_6m" in metric_df.columns else pd.Series(np.nan, index=metric_df.index)
 active_cv = metric_df["active_days_cv_6m"] if "active_days_cv_6m" in metric_df.columns else pd.Series(np.nan, index=metric_df.index)
@@ -904,26 +1063,20 @@ metric_df["合作穩定度(CV)"] = np.where(service_cv.notna(), service_cv, acti
 
 metric_options = {
     "新客流失率(60天，低越好)": ("new_churn_rate_3m", "percent", True),
+    "新客數(3M,滿60天，高越好)": ("new_customers_3m", "number0", False),
+    "新客留住人數(3M，高越好)": ("new_retained_3m", "number0", False),
+    "熟客化率(180天達5次，高越好)": ("regular_rate_180", "percent", False),
+    "熟客維持率(後180天≥3次，高越好)": ("retention_rate_180", "percent", False),
     "總單量(3M，高越好)": ("total_orders_3m", "number0", False),
-    "新客量(3M,滿60天，高越好)": ("new_customers_3m", "number0", False),
-    "新客回指率(30天，高越好)": ("new_repeat_rate_3m", "percent", False),
-    "新客深度回指率(60天，高越好)": ("new_deep_rate_3m", "percent", False),
-    "熟客回指率(30天，高越好)": ("familiar_repeat_rate_3m", "percent", False),
-    "熟客深度回指率(60天，高越好)": ("familiar_deep_rate_3m", "percent", False),
     "指定率(3M，高越好)": ("request_rate_3m", "percent", False),
     "空窗率(3M，低越好)": ("vacancy_rate_3m", "percent", True),
     "合作穩定度(CV，低越好)": ("合作穩定度(CV)", "number1", True),
-    "最近有單距今(天，低越好)": ("days_since_last_tx", "number1", True),
+    "連續無單月數(低越好)": ("months_since_last", "number0", True),
 }
 
 metric_choice = st.selectbox("選擇指標", list(metric_options.keys()))
 metric_col, metric_fmt, metric_asc = metric_options[metric_choice]
 metric_view = metric_df[["設計師", metric_col]].dropna().copy()
-if metric_col in ("new_repeat_rate_3m", "new_deep_rate_3m") and min_new_repeat_base > 0:
-    base_df = metric_df[["設計師", "new_repeat_base_3m"]].copy()
-    metric_view = metric_view.merge(base_df, on="設計師", how="left")
-    metric_view = metric_view[metric_view["new_repeat_base_3m"] >= min_new_repeat_base]
-    metric_view = metric_view.drop(columns=["new_repeat_base_3m"])
 render_bar_chart(
     metric_view,
     "設計師",
@@ -935,11 +1088,9 @@ render_bar_chart(
     orient="horizontal",
     ascending=metric_asc,
 )
-if metric_col in ("new_repeat_rate_3m", "new_deep_rate_3m") and min_new_repeat_base > 0:
-    st.caption(f"新客回指率樣本數小於 {int(min_new_repeat_base)} 的師傅已排除。")
 
-st.subheader("個別師傅狀態（最近 3 個月）")
-st.caption("新客＝全品牌首次；回店口徑＝同分店；回指 T2=30 天、T3=60 天。")
+st.subheader("個別師傅狀態")
+st.caption("新客＝全品牌首次；回店口徑＝同分店；熟客＝180 天內同分店同師傅消費 ≥5 次。")
 
 if not designer_filter:
     st.info("目前沒有可顯示的師傅。")
@@ -951,50 +1102,56 @@ else:
         st.info("此師傅在最近 3 個月內沒有足夠資料。")
     else:
         r = selected_row.iloc[0]
-        st.markdown("**第一組｜新客流失率・空窗率・總單量・新客量**")
+        st.markdown("**出勤狀態**")
+        c1, c2, c3, c4 = st.columns(4)
+        has_prev = r.get("has_order_prev_month")
+        has_prev_text = "是" if has_prev is True else ("否" if has_prev is False else "-")
+        c1.metric("上月是否有單", has_prev_text)
+        c2.metric("近3月有單月份數", f"{int(r['active_months_3m'])}" if pd.notna(r.get("active_months_3m")) else "-")
+        c3.metric("連續無單月數", f"{int(r['months_since_last'])}" if pd.notna(r.get("months_since_last")) else "-")
+        c4.metric("空窗率(3M)", f"{r['vacancy_rate_3m']:.2%}" if pd.notna(r.get("vacancy_rate_3m")) else "-")
+
+        st.markdown("**新客不流失能力**")
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("新客流失率(60天)", f"{r['new_churn_rate_3m']:.2%}" if pd.notna(r.get("new_churn_rate_3m")) else "-")
-        c2.metric("空窗率(3M)", f"{r['vacancy_rate_3m']:.2%}" if pd.notna(r.get("vacancy_rate_3m")) else "-")
-        c3.metric("總單量(3M)", f"{int(r['total_orders_3m'])}" if pd.notna(r.get("total_orders_3m")) else "-")
-        c4.metric("新客量(3M,滿60天)", f"{int(r['new_customers_3m'])}" if pd.notna(r.get("new_customers_3m")) else "-")
+        c2.metric("新客數(3M,滿60天)", f"{int(r['new_customers_3m'])}" if pd.notna(r.get("new_customers_3m")) else "-")
+        c3.metric("流失人數(3M)", f"{int(r['new_churned_3m'])}" if pd.notna(r.get("new_churned_3m")) else "-")
+        c4.metric("留住人數(3M)", f"{int(r['new_retained_3m'])}" if pd.notna(r.get("new_retained_3m")) else "-")
 
-        st.markdown("**第二組｜新客回指・新客深度回指・熟客回指・熟客深度回指**")
-        new_repeat_base = r.get("new_repeat_base_3m")
-        if pd.notna(r.get("new_repeat_rate_3m")):
-            if min_new_repeat_base > 0 and pd.notna(new_repeat_base) and new_repeat_base < min_new_repeat_base:
-                new_repeat_display = "樣本不足"
-            else:
-                new_repeat_display = f"{r['new_repeat_rate_3m']:.2%}"
-        else:
-            new_repeat_display = "-"
+        st.markdown("**熟客化能力（180 天內達 5 次）**")
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("新客回指率(30天)", new_repeat_display)
-        c2.metric("新客深度回指(60天)", f"{r['new_deep_rate_3m']:.2%}" if pd.notna(r.get("new_deep_rate_3m")) else "-")
-        c3.metric("熟客回指率(30天)", f"{r['familiar_repeat_rate_3m']:.2%}" if pd.notna(r.get("familiar_repeat_rate_3m")) else "-")
-        c4.metric("熟客深度回指(60天)", f"{r['familiar_deep_rate_3m']:.2%}" if pd.notna(r.get("familiar_deep_rate_3m")) else "-")
+        c1.metric("熟客化率", f"{r['regular_rate_180']:.2%}" if pd.notna(r.get("regular_rate_180")) else "-")
+        c2.metric("熟客化樣本數", f"{int(r['regular_base_180'])}" if pd.notna(r.get("regular_base_180")) else "-")
+        c3.metric("熟客達標人數", f"{int(r['regular_achieved_180'])}" if pd.notna(r.get("regular_achieved_180")) else "-")
+        c4.metric("平均達標天數", f"{r['regular_days_avg_180']:.0f}" if pd.notna(r.get("regular_days_avg_180")) else "-")
 
-        st.markdown("**第三組｜合作穩定度**")
+        st.markdown("**熟客維持能力（後 180 天內 ≥3 次）**")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("熟客維持率", f"{r['retention_rate_180']:.2%}" if pd.notna(r.get("retention_rate_180")) else "-")
+        c2.metric("熟客維持樣本數", f"{int(r['retention_base_180'])}" if pd.notna(r.get("retention_base_180")) else "-")
+        c3.metric("熟客維持達標人數", f"{int(r['retention_achieved_180'])}" if pd.notna(r.get("retention_achieved_180")) else "-")
+        c4.metric("後180天平均回訪次數", f"{r['post_regular_visits_avg_180']:.1f}" if pd.notna(r.get("post_regular_visits_avg_180")) else "-")
+
+        st.markdown("**合作穩定度**")
         c1, c2, c3, c4 = st.columns(4)
         if pd.notna(r.get("service_hours_cv_6m")):
             c1.metric("合作穩定度(工時CV)", f"{r['service_hours_cv_6m']:.2f}")
         else:
             c1.metric("合作穩定度(出勤CV)", f"{r['active_days_cv_6m']:.2f}" if pd.notna(r.get("active_days_cv_6m")) else "-")
 
-        st.caption("回指率以「同師傅、同分店」計算；合作穩定度 CV 越低代表越穩定。")
+        st.caption("熟客化/熟客維持皆以「同分店、同師傅」計算；合作穩定度 CV 越低代表越穩定。")
 
-        # 師傅比較：熟客 vs 新客回指率
-        compare_df = designer_metrics_filtered.dropna(subset=["new_repeat_rate_3m", "familiar_repeat_rate_3m"]).copy()
-        if min_new_repeat_base > 0 and "new_repeat_base_3m" in compare_df.columns:
-            compare_df = compare_df[compare_df["new_repeat_base_3m"] >= min_new_repeat_base]
+        # 師傅比較：熟客化率 vs 熟客維持率
+        compare_df = designer_metrics_filtered.dropna(subset=["regular_rate_180", "retention_rate_180"]).copy()
         if not compare_df.empty:
             base = alt.Chart(compare_df).mark_circle(size=60, color="#9aa0a6").encode(
-                x=alt.X("familiar_repeat_rate_3m:Q", axis=alt.Axis(format="%", title="熟客回指率(30天)")),
-                y=alt.Y("new_repeat_rate_3m:Q", axis=alt.Axis(format="%", title="新客回指率(30天)")),
-                tooltip=["設計師", alt.Tooltip("familiar_repeat_rate_3m:Q", format=".2%"), alt.Tooltip("new_repeat_rate_3m:Q", format=".2%")],
+                x=alt.X("regular_rate_180:Q", axis=alt.Axis(format="%", title="熟客化率(180天達5次)")),
+                y=alt.Y("retention_rate_180:Q", axis=alt.Axis(format="%", title="熟客維持率(後180天≥3次)")),
+                tooltip=["設計師", alt.Tooltip("regular_rate_180:Q", format=".2%"), alt.Tooltip("retention_rate_180:Q", format=".2%")],
             )
             highlight = alt.Chart(compare_df[compare_df["設計師"] == designer_select]).mark_circle(size=140, color="#e15759").encode(
-                x="familiar_repeat_rate_3m:Q",
-                y="new_repeat_rate_3m:Q",
+                x="regular_rate_180:Q",
+                y="retention_rate_180:Q",
                 tooltip=["設計師"],
             )
             st.altair_chart(base + highlight, use_container_width=True)
@@ -1003,50 +1160,38 @@ else:
         st.subheader("成長趨勢")
         new_cohort = new_first_store[new_first_store["設計師"] == designer_select].copy()
         new_cohort["cohort_month"] = new_cohort["結帳操作時間"].dt.to_period("M").dt.to_timestamp()
-        new_cohort2 = new_cohort[new_cohort["matured_2"]].copy()
-        new_repeat_trend = (
-            new_cohort2.groupby("cohort_month")
-            .agg(rate=("repeat2", "mean"), n=("repeat2", "count"))
-            .reset_index()
-        )
-        new_repeat_trend["指標"] = "新客回指率(30天)"
-
+        new_cohort_matured = new_cohort[new_cohort["matured"]].copy()
         new_churn_trend = (
-            new_cohort2.groupby("cohort_month")
+            new_cohort_matured.groupby("cohort_month")
             .agg(rate=("churn", "mean"), n=("churn", "count"))
             .reset_index()
         )
         new_churn_trend["指標"] = "新客流失率(60天)"
 
-        fam_cohort = familiar_first[familiar_first["設計師"] == designer_select].copy()
-        if not fam_cohort.empty:
-            fam_cohort["cohort_month"] = fam_cohort["baseline_time"].dt.to_period("M").dt.to_timestamp()
-            fam_cohort2 = fam_cohort[fam_cohort["matured_2"]].copy()
-            fam_cohort3 = fam_cohort[fam_cohort["matured_3"]].copy()
-            fam_deep_trend = (
-                fam_cohort3.groupby("cohort_month")
-                .agg(rate=("repeat3", "mean"), n=("repeat3", "count"))
+        rel_cohort = relationship_first[relationship_first["設計師"] == designer_select].copy()
+        if not rel_cohort.empty:
+            rel_cohort = rel_cohort[rel_cohort["baseline_time"] >= start_ts_12m]
+        if not rel_cohort.empty:
+            rel_cohort["cohort_month"] = rel_cohort["baseline_time"].dt.to_period("M").dt.to_timestamp()
+            regular_trend = (
+                rel_cohort[rel_cohort["regular_matured_180"]]
+                .groupby("cohort_month")
+                .agg(rate=("regular_achieved", "mean"), n=("regular_achieved", "count"))
                 .reset_index()
             )
-            fam_deep_trend["指標"] = "熟客深度回指(60天)"
+            regular_trend["指標"] = "熟客化率(180天達5次)"
 
-            trend_long = pd.concat(
-                [new_repeat_trend, new_churn_trend, fam_deep_trend],
-                ignore_index=True,
+            retention_trend = (
+                rel_cohort[(rel_cohort["regular_achieved"] == True) & (rel_cohort["retention_matured_180"])]
+                .groupby("cohort_month")
+                .agg(rate=("retention_achieved", "mean"), n=("retention_achieved", "count"))
+                .reset_index()
             )
-        else:
-            trend_long = pd.concat([new_repeat_trend, new_churn_trend], ignore_index=True)
+            retention_trend["指標"] = "熟客維持率(後180天≥3次)"
 
-        if not trend_long.empty:
-            line = alt.Chart(trend_long.dropna(subset=["rate"])).mark_line(point=True).encode(
-                x=alt.X("cohort_month:T", title="首次來訪月份"),
-                y=alt.Y("rate:Q", axis=alt.Axis(format="%"), title="比率"),
-                color=alt.Color("指標:N", title=""),
-                tooltip=["cohort_month:T", "指標", alt.Tooltip("rate:Q", format=".2%")],
-            ).properties(height=280)
-            st.altair_chart(line, use_container_width=True)
+            trend_long = pd.concat([new_churn_trend, regular_trend, retention_trend], ignore_index=True)
         else:
-            st.info("目前沒有足夠的回指資料繪製趨勢。")
+            trend_long = new_churn_trend.copy()
 
         # 合作穩定度(工時CV)加入成長趨勢（Z-score）
         cv_trend = None
@@ -1086,14 +1231,15 @@ else:
                 ).properties(height=280)
                 st.caption("成長趨勢（Z-score 標準化後合併）")
                 st.altair_chart(line_z, use_container_width=True)
+            else:
+                st.info("目前沒有足夠的趨勢資料可視覺化。")
+        else:
+            st.info("目前沒有足夠的趨勢資料可視覺化。")
 
-st.subheader("師傅排行榜（Top 6，最近 3 個月）")
-st.caption("新客以全品牌首購；回店口徑同分店；回指 T2=30/T3=60。")
+st.subheader("師傅排行榜（Top 6）")
+st.caption("新客流失/空窗/總單量以近 3 個月計；熟客化/維持以近 12 個月 cohort 且滿 180 天計。")
 col_good, col_watch = st.columns(2)
 has_hours_cv = "service_hours_cv_6m" in designer_metrics_filtered.columns and designer_metrics_filtered["service_hours_cv_6m"].notna().any()
-rank_new_repeat = designer_metrics_filtered.dropna(subset=["new_repeat_rate_3m"]).copy()
-if min_new_repeat_base > 0 and "new_repeat_base_3m" in rank_new_repeat.columns:
-    rank_new_repeat = rank_new_repeat[rank_new_repeat["new_repeat_base_3m"] >= min_new_repeat_base]
 
 with col_good:
     st.markdown("<span style='color:#2ca02c;font-weight:700;'>表現較佳</span>", unsafe_allow_html=True)
@@ -1107,19 +1253,19 @@ with col_good:
         color="#2ca02c",
     )
     render_rank_bar(
-        designer_metrics_filtered.dropna(subset=["familiar_repeat_rate_3m"]),
+        designer_metrics_filtered.dropna(subset=["regular_rate_180"]),
         "設計師",
-        "familiar_repeat_rate_3m",
-        "熟客回指率最高(30天)",
+        "regular_rate_180",
+        "熟客化率最高(180天達5次)",
         ascending=False,
         value_format="percent",
         color="#2ca02c",
     )
     render_rank_bar(
-        rank_new_repeat,
+        designer_metrics_filtered.dropna(subset=["retention_rate_180"]),
         "設計師",
-        "new_repeat_rate_3m",
-        "新客回指率最高(30天)",
+        "retention_rate_180",
+        "熟客維持率最高(後180天≥3次)",
         ascending=False,
         value_format="percent",
         color="#2ca02c",
@@ -1179,19 +1325,19 @@ with col_watch:
         color="#d62728",
     )
     render_rank_bar(
-        designer_metrics_filtered.dropna(subset=["familiar_repeat_rate_3m"]),
+        designer_metrics_filtered.dropna(subset=["regular_rate_180"]),
         "設計師",
-        "familiar_repeat_rate_3m",
-        "熟客回指率最低(30天)",
+        "regular_rate_180",
+        "熟客化率最低(180天達5次)",
         ascending=True,
         value_format="percent",
         color="#d62728",
     )
     render_rank_bar(
-        rank_new_repeat,
+        designer_metrics_filtered.dropna(subset=["retention_rate_180"]),
         "設計師",
-        "new_repeat_rate_3m",
-        "新客回指率最低(30天)",
+        "retention_rate_180",
+        "熟客維持率最低(後180天≥3次)",
         ascending=True,
         value_format="percent",
         color="#d62728",
@@ -1275,8 +1421,8 @@ store_table = None
 store_designer_table = None
 display_vacancy = None
 
-# 師傅彙總（近3月）
-st.markdown("**師傅彙總（近 3 月）**")
+# 師傅彙總
+st.markdown("**師傅彙總（新客近 3 月 / 熟客化近 12 月）**")
 if designer_metrics_filtered.empty:
     st.info("目前沒有足夠的近 3 月資料。")
     designer_table = None
@@ -1290,13 +1436,20 @@ else:
             "設計師": "師傅",
             "new_customers_3m": "新客數(3M,滿60天)",
             "new_churn_rate_3m": "新客流失率(60天)",
-            "new_repeat_rate_3m": "新客回指率(30天)",
-            "new_repeat_base_3m": "新客回指樣本數",
-            "new_deep_rate_3m": "新客深度回指率(60天)",
-            "familiar_customers_3m": "熟客數(3M,滿30天)",
-            "familiar_repeat_rate_3m": "熟客回指率(30天)",
-            "familiar_deep_rate_3m": "熟客深度回指率(60天)",
             "total_orders_3m": "總單量(3M)",
+            "new_churned_3m": "流失人數(3M)",
+            "new_retained_3m": "留住人數(3M)",
+            "active_months_3m": "近3月有單月份數",
+            "has_order_prev_month": "上月是否有單",
+            "months_since_last": "連續無單月數",
+            "regular_rate_180": "熟客化率(180天達5次)",
+            "regular_base_180": "熟客化樣本數(滿180天)",
+            "regular_achieved_180": "熟客化達標人數",
+            "regular_days_avg_180": "平均達標天數",
+            "retention_rate_180": "熟客維持率(後180天≥3次)",
+            "retention_base_180": "熟客維持樣本數(滿後180天)",
+            "retention_achieved_180": "熟客維持達標人數",
+            "post_regular_visits_avg_180": "後180天平均回訪次數",
             "request_rate_3m": "指定率(3M)",
             "request_yes_3m": "指定單數(3M)",
             "request_total_3m": "總單數(3M)",
@@ -1304,23 +1457,31 @@ else:
             "days_since_last_tx": "最近有單距今(天)",
         }
     )
+    if "上月是否有單" in designer_table.columns:
+        designer_table["上月是否有單"] = designer_table["上月是否有單"].map({True: "是", False: "否"})
     cols = [
         "師傅",
         "新客數(3M,滿60天)",
         "新客流失率(60天)",
+        "流失人數(3M)",
+        "留住人數(3M)",
         "總單量(3M)",
-        "新客回指率(30天)",
-        "新客回指樣本數",
-        "新客深度回指率(60天)",
-        "熟客數(3M,滿30天)",
-        "熟客回指率(30天)",
-        "熟客深度回指率(60天)",
+        "上月是否有單",
+        "近3月有單月份數",
+        "連續無單月數",
+        "熟客化率(180天達5次)",
+        "熟客化樣本數(滿180天)",
+        "熟客化達標人數",
+        "平均達標天數",
+        "熟客維持率(後180天≥3次)",
+        "熟客維持樣本數(滿後180天)",
+        "熟客維持達標人數",
+        "後180天平均回訪次數",
         "指定率(3M)",
         "指定單數(3M)",
         "總單數(3M)",
         "空窗率(3M)",
         "合作穩定度(CV)",
-        "最近有單距今(天)",
     ]
     cols = [c for c in cols if c in designer_table.columns]
     st.dataframe(designer_table[cols].sort_values("新客流失率(60天)", ascending=True), use_container_width=True)
