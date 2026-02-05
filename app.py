@@ -896,6 +896,12 @@ orders_summary = (
     .reset_index(name="total_orders_3m")
 )
 designer_metrics = designer_metrics.merge(orders_summary, on="設計師", how="left")
+designer_metrics["new_share_3m"] = np.where(
+    pd.to_numeric(designer_metrics["total_orders_3m"], errors="coerce") > 0,
+    pd.to_numeric(designer_metrics["new_customers_3m"], errors="coerce")
+    / pd.to_numeric(designer_metrics["total_orders_3m"], errors="coerce"),
+    np.nan,
+)
 
 # 出勤狀態（以月份計）
 orders_monthly = merged_store.copy()
@@ -915,6 +921,11 @@ active_days_monthly = (
     .reset_index(name="active_days")
 )
 active_days_recent = active_days_monthly[active_days_monthly["month_period"] >= start_month_3m]
+active_days_3m = (
+    active_days_recent.groupby("設計師")["active_days"]
+    .sum()
+    .reset_index(name="active_days_3m")
+)
 avg_active_days_3m = (
     active_days_recent.groupby("設計師")["active_days"]
     .sum()
@@ -938,6 +949,7 @@ last_month["months_since_last"] = last_month["last_order_month"].apply(lambda p:
 
 attendance_summary = (
     active_months_3m
+    .merge(active_days_3m, on="設計師", how="left")
     .merge(avg_active_days_3m, on="設計師", how="left")
     .merge(has_order_prev[["設計師", "has_order_prev_month"]], on="設計師", how="left")
     .merge(last_month[["設計師", "months_since_last"]], on="設計師", how="left")
@@ -1154,7 +1166,7 @@ designer_metrics = designer_metrics.merge(stability_by_designer, on="設計師",
 # 四大區塊整合分數（Z-score + 樣本數修正）
 basic_z = pd.DataFrame({
     "z_active_days": zscore_series(designer_metrics.get("avg_active_days_3m")),
-    "z_active_months": zscore_series(designer_metrics.get("active_months_3m")),
+    "z_active_days_3m": zscore_series(designer_metrics.get("active_days_3m")),
     "z_total_orders": zscore_series(designer_metrics.get("total_orders_3m")),
     "z_vacancy": -zscore_series(designer_metrics.get("vacancy_rate_3m")),
 })
@@ -1163,14 +1175,8 @@ designer_metrics["basic_rel"] = reliability_factor(designer_metrics.get("total_o
 designer_metrics["basic_score"] = designer_metrics["basic_z"] * designer_metrics["basic_rel"]
 designer_metrics["basic_score_0100"] = np.clip(50 + 10 * designer_metrics["basic_score"], 0, 100)
 
-new_share = np.where(
-    pd.to_numeric(designer_metrics.get("total_orders_3m"), errors="coerce") > 0,
-    pd.to_numeric(designer_metrics.get("new_customers_3m"), errors="coerce")
-    / pd.to_numeric(designer_metrics.get("total_orders_3m"), errors="coerce"),
-    np.nan,
-)
 new_z = pd.DataFrame({
-    "z_new_share": zscore_series(pd.Series(new_share)),
+    "z_new_share": zscore_series(designer_metrics.get("new_share_3m")),
     "z_new_churn": -zscore_series(designer_metrics.get("new_churn_rate_3m")),
 })
 designer_metrics["new_z"] = new_z.mean(axis=1, skipna=True)
@@ -1444,9 +1450,9 @@ else:
             )
         with c2:
             metric_card(
-                "近3月有單月份數",
-                f"{int(r['active_months_3m'])}" if pd.notna(r.get("active_months_3m")) else "-",
-                "近 3 個月內，有單的月份數（0～3）。",
+                "近3月有單天數",
+                f"{int(r['active_days_3m'])}" if pd.notna(r.get("active_days_3m")) else "-",
+                "近 3 個月內所有有單天數的加總。",
             )
         with c3:
             metric_card(
@@ -1466,9 +1472,9 @@ else:
         c1, c2, c3, c4 = st.columns(4)
         with c1:
             metric_card(
-                "新客流失率(60天)",
-                f"{r['new_churn_rate_3m']:.2%}" if pd.notna(r.get("new_churn_rate_3m")) else "-",
-                "滿 60 天新客中，60 天內未回店（同分店）的比例。",
+                "新客占比(新客/總單量)",
+                f"{r['new_share_3m']:.2%}" if pd.notna(r.get("new_share_3m")) else "-",
+                "近 3 個月新客數 / 總單量的比例。",
             )
         with c2:
             metric_card(
@@ -1478,9 +1484,9 @@ else:
             )
         with c3:
             metric_card(
-                "流失人數(3M)",
-                f"{int(r['new_churned_3m'])}" if pd.notna(r.get("new_churned_3m")) else "-",
-                "上述滿 60 天新客中的流失人數。",
+                "新客流失率(60天)",
+                f"{r['new_churn_rate_3m']:.2%}" if pd.notna(r.get("new_churn_rate_3m")) else "-",
+                "滿 60 天新客中，60 天內未回店（同分店）的比例。",
             )
         with c4:
             metric_card(
@@ -1893,6 +1899,7 @@ else:
             "new_score_0100": "新客獲取力分數(0-100)",
             "convert_score_0100": "熟客轉化力分數(0-100)",
             "retain_score_0100": "熟客經營力分數(0-100)",
+            "new_share_3m": "新客占比(新客/總單量)",
             "new_customers_3m": "新客數(3M,滿60天)",
             "new_churn_rate_3m": "新客流失率(60天)",
             "total_orders_3m": "總單量(3M)",
@@ -1907,7 +1914,7 @@ else:
             "familiar_deep_rate_3m": "熟客深度回指率(60天)",
             "familiar_deep_n": "熟客深度回指樣本數(60天)",
             "avg_active_days_3m": "每月平均有單天數(近3月)",
-            "active_months_3m": "近3月有單月份數",
+            "active_days_3m": "近3月有單天數",
             "regular_rate_180": "熟客化率(180天達5次)",
             "regular_base_180": "熟客化樣本數(滿180天)",
             "regular_achieved_180": "熟客化達標人數",
@@ -1930,6 +1937,7 @@ else:
         "新客獲取力分數(0-100)",
         "熟客轉化力分數(0-100)",
         "熟客經營力分數(0-100)",
+        "新客占比(新客/總單量)",
         "新客數(3M,滿60天)",
         "新客流失率(60天)",
         "流失人數(3M)",
@@ -1944,7 +1952,7 @@ else:
         "熟客深度回指樣本數(60天)",
         "總單量(3M)",
         "每月平均有單天數(近3月)",
-        "近3月有單月份數",
+        "近3月有單天數",
         "熟客化率(180天達5次)",
         "熟客化樣本數(滿180天)",
         "熟客化達標人數",
