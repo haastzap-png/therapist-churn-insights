@@ -74,6 +74,15 @@ h1 {
   font-size: 2.2rem;
   color: var(--ink);
 }
+.stTitle, .stHeader, .stSubheader {
+  color: var(--ink) !important;
+}
+.stMarkdown, .stMarkdown * {
+  color: var(--ink) !important;
+}
+.stCaption, .stCaption * {
+  color: var(--muted) !important;
+}
 div[data-testid="stSidebar"] {
   background: #faf7f2;
   border-right: 1px solid var(--line);
