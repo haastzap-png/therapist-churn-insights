@@ -4,6 +4,7 @@ import numpy as np
 import altair as alt
 from pathlib import Path
 import re
+import html
 from datetime import timedelta
 from io import BytesIO
 
@@ -152,6 +153,65 @@ div[data-testid="stMetric"] label {
 .stDataFrame, .stTable {
   border: 1px solid var(--line);
   border-radius: 12px;
+}
+.metric-card {
+  position: relative;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 14px 16px;
+  box-shadow: var(--shadow);
+  min-height: 96px;
+}
+.metric-title {
+  font-size: 0.95rem;
+  color: var(--muted);
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.metric-value {
+  font-size: 2rem;
+  color: var(--ink);
+  font-weight: 700;
+  line-height: 1.1;
+}
+.metric-help {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid #c7c1b7;
+  color: #6b6b63;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  cursor: help;
+}
+.metric-help::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  top: 28px;
+  right: 0;
+  width: 240px;
+  padding: 8px 10px;
+  background: #1d1b16;
+  color: #ffffff;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-4px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  z-index: 10;
+}
+.metric-help:hover::after {
+  opacity: 1;
+  transform: translateY(0);
 }
 </style>
 """,
@@ -383,6 +443,21 @@ def render_rank_bar(df, name_col, value_col, title, ascending, value_format, col
     )
     height = max(260, 26 * len(chart_df) + 40)
     st.altair_chart((bars + labels).properties(height=height), use_container_width=True)
+
+def metric_card(label, value, help_text):
+    safe_label = html.escape(str(label))
+    safe_value = html.escape(str(value))
+    safe_help = html.escape(str(help_text), quote=True)
+    st.markdown(
+        f"""
+        <div class="metric-card">
+          <div class="metric-title">{safe_label}</div>
+          <div class="metric-value">{safe_value}</div>
+          <div class="metric-help" data-tooltip="{safe_help}">!</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 for df, col in [(bills, "國碼"), (bills, "電話號碼")]:
@@ -1161,38 +1236,128 @@ else:
         r = selected_row.iloc[0]
         st.markdown("**出勤狀態**")
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("每月平均有單天數(近3月)", f"{r['avg_active_days_3m']:.1f}" if pd.notna(r.get("avg_active_days_3m")) else "-")
-        c2.metric("近3月有單月份數", f"{int(r['active_months_3m'])}" if pd.notna(r.get("active_months_3m")) else "-")
-        c3.metric("總單量(3M)", f"{int(r['total_orders_3m'])}" if pd.notna(r.get("total_orders_3m")) else "-")
-        c4.metric("空窗率(3M)", f"{r['vacancy_rate_3m']:.2%}" if pd.notna(r.get("vacancy_rate_3m")) else "-")
+        with c1:
+            metric_card(
+                "每月平均有單天數(近3月)",
+                f"{r['avg_active_days_3m']:.1f}" if pd.notna(r.get("avg_active_days_3m")) else "-",
+                "近 3 個月每月平均有單的天數。",
+            )
+        with c2:
+            metric_card(
+                "近3月有單月份數",
+                f"{int(r['active_months_3m'])}" if pd.notna(r.get("active_months_3m")) else "-",
+                "近 3 個月內，有單的月份數（0～3）。",
+            )
+        with c3:
+            metric_card(
+                "總單量(3M)",
+                f"{int(r['total_orders_3m'])}" if pd.notna(r.get("total_orders_3m")) else "-",
+                "近 3 個月的訂單總數。",
+            )
+        with c4:
+            metric_card(
+                "空窗率(3M)",
+                f"{r['vacancy_rate_3m']:.2%}" if pd.notna(r.get("vacancy_rate_3m")) else "-",
+                "近 3 個月平均空窗率（1 - 服務時數/168 小時）。",
+            )
 
         st.markdown("**新客不流失能力**")
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("新客流失率(60天)", f"{r['new_churn_rate_3m']:.2%}" if pd.notna(r.get("new_churn_rate_3m")) else "-")
-        c2.metric("新客數(3M,滿60天)", f"{int(r['new_customers_3m'])}" if pd.notna(r.get("new_customers_3m")) else "-")
-        c3.metric("流失人數(3M)", f"{int(r['new_churned_3m'])}" if pd.notna(r.get("new_churned_3m")) else "-")
-        c4.metric("留住人數(3M)", f"{int(r['new_retained_3m'])}" if pd.notna(r.get("new_retained_3m")) else "-")
+        with c1:
+            metric_card(
+                "新客流失率(60天)",
+                f"{r['new_churn_rate_3m']:.2%}" if pd.notna(r.get("new_churn_rate_3m")) else "-",
+                "滿 60 天新客中，60 天內未回店（同分店）的比例。",
+            )
+        with c2:
+            metric_card(
+                "新客數(3M,滿60天)",
+                f"{int(r['new_customers_3m'])}" if pd.notna(r.get("new_customers_3m")) else "-",
+                "近 3 個月新客中已滿 60 天者。",
+            )
+        with c3:
+            metric_card(
+                "流失人數(3M)",
+                f"{int(r['new_churned_3m'])}" if pd.notna(r.get("new_churned_3m")) else "-",
+                "上述滿 60 天新客中的流失人數。",
+            )
+        with c4:
+            metric_card(
+                "留住人數(3M)",
+                f"{int(r['new_retained_3m'])}" if pd.notna(r.get("new_retained_3m")) else "-",
+                "上述滿 60 天新客中的留住人數。",
+            )
 
         st.markdown("**熟客化能力（180 天內達 5 次）**")
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("熟客化率", f"{r['regular_rate_180']:.2%}" if pd.notna(r.get("regular_rate_180")) else "-")
-        c2.metric("熟客化樣本數", f"{int(r['regular_base_180'])}" if pd.notna(r.get("regular_base_180")) else "-")
-        c3.metric("熟客達標人數", f"{int(r['regular_achieved_180'])}" if pd.notna(r.get("regular_achieved_180")) else "-")
-        c4.metric("平均達標天數", f"{r['regular_days_avg_180']:.0f}" if pd.notna(r.get("regular_days_avg_180")) else "-")
+        with c1:
+            metric_card(
+                "熟客化率",
+                f"{r['regular_rate_180']:.2%}" if pd.notna(r.get("regular_rate_180")) else "-",
+                "同分店同師傅，180 天內消費 ≥5 次的比例。",
+            )
+        with c2:
+            metric_card(
+                "熟客化樣本數",
+                f"{int(r['regular_base_180'])}" if pd.notna(r.get("regular_base_180")) else "-",
+                "關係起點已滿 180 天的樣本數。",
+            )
+        with c3:
+            metric_card(
+                "熟客達標人數",
+                f"{int(r['regular_achieved_180'])}" if pd.notna(r.get("regular_achieved_180")) else "-",
+                "在 180 天內達成 ≥5 次的人數。",
+            )
+        with c4:
+            metric_card(
+                "平均達標天數",
+                f"{r['regular_days_avg_180']:.0f}" if pd.notna(r.get("regular_days_avg_180")) else "-",
+                "達成第 5 次消費的平均天數。",
+            )
 
         st.markdown("**熟客維持能力（後 180 天內 ≥3 次）**")
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("熟客維持率", f"{r['retention_rate_180']:.2%}" if pd.notna(r.get("retention_rate_180")) else "-")
-        c2.metric("熟客維持樣本數", f"{int(r['retention_base_180'])}" if pd.notna(r.get("retention_base_180")) else "-")
-        c3.metric("熟客維持達標人數", f"{int(r['retention_achieved_180'])}" if pd.notna(r.get("retention_achieved_180")) else "-")
-        c4.metric("後180天平均回訪次數", f"{r['post_regular_visits_avg_180']:.1f}" if pd.notna(r.get("post_regular_visits_avg_180")) else "-")
+        with c1:
+            metric_card(
+                "熟客維持率",
+                f"{r['retention_rate_180']:.2%}" if pd.notna(r.get("retention_rate_180")) else "-",
+                "熟客達成後 180 天內回訪 ≥3 次的比例。",
+            )
+        with c2:
+            metric_card(
+                "熟客維持樣本數",
+                f"{int(r['retention_base_180'])}" if pd.notna(r.get("retention_base_180")) else "-",
+                "熟客達成且後 180 天已滿期的樣本數。",
+            )
+        with c3:
+            metric_card(
+                "熟客維持達標人數",
+                f"{int(r['retention_achieved_180'])}" if pd.notna(r.get("retention_achieved_180")) else "-",
+                "後 180 天回訪 ≥3 次的人數。",
+            )
+        with c4:
+            metric_card(
+                "後180天平均回訪次數",
+                f"{r['post_regular_visits_avg_180']:.1f}" if pd.notna(r.get("post_regular_visits_avg_180")) else "-",
+                "熟客達成後 180 天內平均回訪次數。",
+            )
 
         st.markdown("**合作穩定度**")
         c1, c2, c3, c4 = st.columns(4)
         if pd.notna(r.get("service_hours_cv_6m")):
-            c1.metric("合作穩定度(工時CV)", f"{r['service_hours_cv_6m']:.2f}")
+            with c1:
+                metric_card(
+                    "合作穩定度(工時CV)",
+                    f"{r['service_hours_cv_6m']:.2f}",
+                    "近 6 個月服務時數的變異係數（CV），越低越穩定。",
+                )
         else:
-            c1.metric("合作穩定度(出勤CV)", f"{r['active_days_cv_6m']:.2f}" if pd.notna(r.get("active_days_cv_6m")) else "-")
+            with c1:
+                metric_card(
+                    "合作穩定度(出勤CV)",
+                    f"{r['active_days_cv_6m']:.2f}" if pd.notna(r.get("active_days_cv_6m")) else "-",
+                    "近 6 個月出勤天數的變異係數（CV），越低越穩定。",
+                )
 
         st.caption("熟客化/熟客維持皆以「同分店、同師傅」計算；合作穩定度 CV 越低代表越穩定。")
 
