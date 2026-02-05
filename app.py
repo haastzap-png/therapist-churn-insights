@@ -93,6 +93,20 @@ section.main .stCaption,
 section.main .stCaption * {
   color: var(--muted) !important;
 }
+div[data-testid="stAppViewContainer"] section.main h1,
+div[data-testid="stAppViewContainer"] section.main h2,
+div[data-testid="stAppViewContainer"] section.main h3,
+div[data-testid="stAppViewContainer"] section.main h4,
+div[data-testid="stAppViewContainer"] section.main p,
+div[data-testid="stAppViewContainer"] section.main li,
+div[data-testid="stAppViewContainer"] section.main span {
+  color: var(--ink) !important;
+}
+div[data-testid="stHeader"] h1,
+div[data-testid="stHeader"] h2,
+div[data-testid="stHeader"] h3 {
+  color: var(--ink) !important;
+}
 div[data-testid="stSidebar"] {
   background: #faf7f2;
   border-right: 1px solid var(--line);
@@ -708,6 +722,7 @@ designer_metrics = designer_metrics.merge(orders_summary, on="設計師", how="l
 # 出勤狀態（以月份計）
 orders_monthly = merged_store.copy()
 orders_monthly["month_period"] = orders_monthly["結帳操作時間"].dt.to_period("M")
+orders_monthly["date"] = orders_monthly["結帳操作時間"].dt.date
 end_month = end_ts.to_period("M")
 start_month_3m = end_month - 2
 recent_months = orders_monthly[orders_monthly["month_period"] >= start_month_3m]
@@ -715,6 +730,18 @@ active_months_3m = (
     recent_months.groupby("設計師")["month_period"]
     .nunique()
     .reset_index(name="active_months_3m")
+)
+active_days_monthly = (
+    orders_monthly.groupby(["設計師", "month_period"])["date"]
+    .nunique()
+    .reset_index(name="active_days")
+)
+active_days_recent = active_days_monthly[active_days_monthly["month_period"] >= start_month_3m]
+avg_active_days_3m = (
+    active_days_recent.groupby("設計師")["active_days"]
+    .sum()
+    .div(3)
+    .reset_index(name="avg_active_days_3m")
 )
 prev_month = end_month - 1
 orders_prev = orders_monthly[orders_monthly["month_period"] == prev_month]
@@ -733,6 +760,7 @@ last_month["months_since_last"] = last_month["last_order_month"].apply(lambda p:
 
 attendance_summary = (
     active_months_3m
+    .merge(avg_active_days_3m, on="設計師", how="left")
     .merge(has_order_prev[["設計師", "has_order_prev_month"]], on="設計師", how="left")
     .merge(last_month[["設計師", "months_since_last"]], on="設計師", how="left")
 )
@@ -1071,7 +1099,7 @@ metric_options = {
     "指定率(3M，高越好)": ("request_rate_3m", "percent", False),
     "空窗率(3M，低越好)": ("vacancy_rate_3m", "percent", True),
     "合作穩定度(CV，低越好)": ("合作穩定度(CV)", "number1", True),
-    "連續無單月數(低越好)": ("months_since_last", "number0", True),
+    "每月平均有單天數(近3月，高越好)": ("avg_active_days_3m", "number1", False),
 }
 
 metric_choice = st.selectbox("選擇指標", list(metric_options.keys()))
@@ -1104,11 +1132,9 @@ else:
         r = selected_row.iloc[0]
         st.markdown("**出勤狀態**")
         c1, c2, c3, c4 = st.columns(4)
-        has_prev = r.get("has_order_prev_month")
-        has_prev_text = "是" if has_prev is True else ("否" if has_prev is False else "-")
-        c1.metric("上月是否有單", has_prev_text)
+        c1.metric("每月平均有單天數(近3月)", f"{r['avg_active_days_3m']:.1f}" if pd.notna(r.get("avg_active_days_3m")) else "-")
         c2.metric("近3月有單月份數", f"{int(r['active_months_3m'])}" if pd.notna(r.get("active_months_3m")) else "-")
-        c3.metric("連續無單月數", f"{int(r['months_since_last'])}" if pd.notna(r.get("months_since_last")) else "-")
+        c3.metric("總單量(3M)", f"{int(r['total_orders_3m'])}" if pd.notna(r.get("total_orders_3m")) else "-")
         c4.metric("空窗率(3M)", f"{r['vacancy_rate_3m']:.2%}" if pd.notna(r.get("vacancy_rate_3m")) else "-")
 
         st.markdown("**新客不流失能力**")
@@ -1439,9 +1465,8 @@ else:
             "total_orders_3m": "總單量(3M)",
             "new_churned_3m": "流失人數(3M)",
             "new_retained_3m": "留住人數(3M)",
+            "avg_active_days_3m": "每月平均有單天數(近3月)",
             "active_months_3m": "近3月有單月份數",
-            "has_order_prev_month": "上月是否有單",
-            "months_since_last": "連續無單月數",
             "regular_rate_180": "熟客化率(180天達5次)",
             "regular_base_180": "熟客化樣本數(滿180天)",
             "regular_achieved_180": "熟客化達標人數",
@@ -1457,8 +1482,6 @@ else:
             "days_since_last_tx": "最近有單距今(天)",
         }
     )
-    if "上月是否有單" in designer_table.columns:
-        designer_table["上月是否有單"] = designer_table["上月是否有單"].map({True: "是", False: "否"})
     cols = [
         "師傅",
         "新客數(3M,滿60天)",
@@ -1466,9 +1489,8 @@ else:
         "流失人數(3M)",
         "留住人數(3M)",
         "總單量(3M)",
-        "上月是否有單",
+        "每月平均有單天數(近3月)",
         "近3月有單月份數",
-        "連續無單月數",
         "熟客化率(180天達5次)",
         "熟客化樣本數(滿180天)",
         "熟客化達標人數",
