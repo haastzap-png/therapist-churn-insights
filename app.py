@@ -162,6 +162,7 @@ div[data-testid="stMetric"] label {
   padding: 14px 16px;
   box-shadow: var(--shadow);
   min-height: 96px;
+  margin-bottom: 8px;
 }
 .metric-title {
   font-size: 0.95rem;
@@ -212,6 +213,13 @@ div[data-testid="stMetric"] label {
 .metric-help:hover::after {
   opacity: 1;
   transform: translateY(0);
+}
+.section-gap {
+  height: 18px;
+}
+div[data-testid="stExpander"] {
+  margin-top: 8px;
+  margin-bottom: 12px;
 }
 </style>
 """,
@@ -466,6 +474,9 @@ def metric_card(label, value, help_text):
         """,
         unsafe_allow_html=True,
     )
+
+def section_gap():
+    st.markdown('<div class="section-gap"></div>', unsafe_allow_html=True)
 
 
 for df, col in [(bills, "國碼"), (bills, "電話號碼")]:
@@ -1242,7 +1253,7 @@ else:
         st.info("此師傅在最近 3 個月內沒有足夠資料。")
     else:
         r = selected_row.iloc[0]
-        st.markdown("**出勤狀態**")
+        st.markdown("**基本狀態**")
         c1, c2, c3, c4 = st.columns(4)
         with c1:
             metric_card(
@@ -1269,7 +1280,8 @@ else:
                 "近 3 個月平均空窗率（1 - 服務時數/168 小時）。",
             )
 
-        st.markdown("**新客不流失能力**")
+        section_gap()
+        st.markdown("**新客獲取力**")
         c1, c2, c3, c4 = st.columns(4)
         with c1:
             metric_card(
@@ -1326,7 +1338,8 @@ else:
                     show_cols = [c for c in retained_cols if c in retained_list.columns]
                     st.dataframe(retained_list[show_cols].sort_values("首單時間"), use_container_width=True)
 
-        st.markdown("**熟客化能力（180 天內達 5 次）**")
+        section_gap()
+        st.markdown("**熟客轉化力（180 天內達 5 次）**")
         c1, c2, c3, c4 = st.columns(4)
         with c1:
             metric_card(
@@ -1353,7 +1366,8 @@ else:
                 "達成第 5 次消費的平均天數。",
             )
 
-        st.markdown("**熟客維持能力（後 180 天內 ≥3 次）**")
+        section_gap()
+        st.markdown("**熟客經營力（後 180 天內 ≥3 次）**")
         c1, c2, c3, c4 = st.columns(4)
         with c1:
             metric_card(
@@ -1380,6 +1394,7 @@ else:
                 "熟客達成後 180 天內平均回訪次數。",
             )
 
+        section_gap()
         st.markdown("**合作穩定度**")
         c1, c2, c3, c4 = st.columns(4)
         if pd.notna(r.get("service_hours_cv_6m")):
