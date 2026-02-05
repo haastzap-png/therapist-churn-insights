@@ -1140,8 +1140,12 @@ active_days["month_start"] = pd.to_datetime(active_days["month"] + "-01")
 active_days_6m = active_days[active_days["month_start"] >= start_ts_6m]
 
 stability_by_designer = (
-    active_days_6m.groupby("設計師")["active_days"]
-    .agg(active_days_avg_6m="mean", active_days_cv_6m=lambda s: s.std() / s.mean() if s.mean() else np.nan)
+    active_days_6m.groupby("設計師")
+    .agg(
+        active_days_avg_6m=("active_days", "mean"),
+        active_days_cv_6m=("active_days", lambda s: s.std() / s.mean() if s.mean() else np.nan),
+        active_months_6m=("month", "nunique"),
+    )
     .reset_index()
 )
 
@@ -1206,8 +1210,16 @@ designer_metrics["retain_rel"] = reliability_factor(designer_metrics.get("retent
 designer_metrics["retain_score"] = designer_metrics["retain_z"] * designer_metrics["retain_rel"]
 designer_metrics["retain_score_0100"] = np.clip(50 + 10 * designer_metrics["retain_score"], 0, 100)
 
-block_scores = designer_metrics[["basic_score", "new_score", "convert_score", "retain_score"]]
-weights = np.array([0.25, 0.25, 0.25, 0.25])
+stability_cv = designer_metrics["service_hours_cv_6m"] if "service_hours_cv_6m" in designer_metrics.columns else pd.Series(np.nan, index=designer_metrics.index)
+stability_cv = np.where(pd.notna(stability_cv), stability_cv, designer_metrics.get("active_days_cv_6m"))
+designer_metrics["stability_cv"] = stability_cv
+designer_metrics["stability_z"] = -zscore_series(designer_metrics.get("stability_cv"))
+designer_metrics["stability_rel"] = reliability_factor(designer_metrics.get("active_months_6m"), n0=6)
+designer_metrics["stability_score"] = designer_metrics["stability_z"] * designer_metrics["stability_rel"]
+designer_metrics["stability_score_0100"] = np.clip(50 + 10 * designer_metrics["stability_score"], 0, 100)
+
+block_scores = designer_metrics[["basic_score", "new_score", "convert_score", "retain_score", "stability_score"]]
+weights = np.array([0.2, 0.2, 0.2, 0.2, 0.2])
 valid_mask = block_scores.notna().values
 weighted = block_scores.fillna(0).values * weights
 weight_sum = (valid_mask * weights).sum(axis=1)
@@ -1339,6 +1351,7 @@ metric_options = {
     "新客獲取力分數(0-100, 高越好)": ("new_score_0100", "number1", False),
     "熟客轉化力分數(0-100, 高越好)": ("convert_score_0100", "number1", False),
     "熟客經營力分數(0-100, 高越好)": ("retain_score_0100", "number1", False),
+    "合作穩定度分數(0-100, 高越好)": ("stability_score_0100", "number1", False),
     "新客流失率(60天，低越好)": ("new_churn_rate_3m", "percent", True),
     "新客數(3M,滿60天，高越好)": ("new_customers_3m", "number0", False),
     "新客留住人數(3M，高越好)": ("new_retained_3m", "number0", False),
@@ -1393,7 +1406,7 @@ else:
             metric_card(
                 "整合分數(0-100)",
                 f"{r['overall_score']:.1f}" if pd.notna(r.get("overall_score")) else "-",
-                "四大區塊（基本、新客獲取、熟客轉化、熟客經營）等權合成；各指標先做 Z-score 標準化，再依樣本數修正。",
+                "五大區塊（基本、新客獲取、熟客轉化、熟客經營、合作穩定度）等權合成；各指標先做 Z-score 標準化，再依樣本數修正。",
                 subtext=sub,
                 tag_text=tag,
                 tag_bg=bg,
@@ -1439,6 +1452,17 @@ else:
                 "熟客經營力分數",
                 f"{r['retain_score_0100']:.1f}" if pd.notna(r.get("retain_score_0100")) else "-",
                 "熟客維持率與後180天平均回訪次數的 Z-score 平均，並依樣本數修正。",
+                subtext=sub,
+                tag_text=tag,
+                tag_bg=bg,
+                tag_color=color,
+            )
+        with score_cols2[1]:
+            sub, tag, bg, color = score_insight(designer_metrics_filtered, "stability_score_0100", r.get("stability_score_0100"), context_label)
+            metric_card(
+                "合作穩定度分數",
+                f"{r['stability_score_0100']:.1f}" if pd.notna(r.get("stability_score_0100")) else "-",
+                "近 6 個月工時 CV（或出勤 CV）之 Z-score（反向），並依樣本月數修正。",
                 subtext=sub,
                 tag_text=tag,
                 tag_bg=bg,
@@ -1905,6 +1929,7 @@ else:
             "new_score_0100": "新客獲取力分數(0-100)",
             "convert_score_0100": "熟客轉化力分數(0-100)",
             "retain_score_0100": "熟客經營力分數(0-100)",
+            "stability_score_0100": "合作穩定度分數(0-100)",
             "new_share_3m": "新客占比(新客/總單量)",
             "new_customers_3m": "新客數(3M,滿60天)",
             "new_churn_rate_3m": "新客流失率(60天)",
@@ -1944,6 +1969,7 @@ else:
         "新客獲取力分數(0-100)",
         "熟客轉化力分數(0-100)",
         "熟客經營力分數(0-100)",
+        "合作穩定度分數(0-100)",
         "新客占比(新客/總單量)",
         "新客數(3M,滿60天)",
         "新客流失率(60天)",
