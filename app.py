@@ -955,6 +955,17 @@ attendance_summary = (
     .merge(last_month[["設計師", "months_since_last"]], on="設計師", how="left")
 )
 designer_metrics = designer_metrics.merge(attendance_summary, on="設計師", how="left")
+designer_metrics["new_per_active_day_3m"] = np.where(
+    pd.to_numeric(designer_metrics.get("active_days_3m"), errors="coerce") > 0,
+    pd.to_numeric(designer_metrics.get("new_customers_3m"), errors="coerce")
+    / pd.to_numeric(designer_metrics.get("active_days_3m"), errors="coerce"),
+    np.nan,
+)
+designer_metrics["new_retention_rate_3m"] = np.where(
+    pd.notna(designer_metrics.get("new_churn_rate_3m")),
+    1 - pd.to_numeric(designer_metrics.get("new_churn_rate_3m"), errors="coerce"),
+    np.nan,
+)
 
 # 熟客化/熟客維持（近 12 個月關係起點）
 regular_summary = None
@@ -1183,14 +1194,22 @@ designer_metrics["basic_rel"] = reliability_factor(designer_metrics.get("total_o
 designer_metrics["basic_score"] = designer_metrics["basic_z"] * designer_metrics["basic_rel"]
 designer_metrics["basic_score_0100"] = np.clip(50 + 10 * designer_metrics["basic_score"], 0, 100)
 
-new_z = pd.DataFrame({
+new_acq_z = pd.DataFrame({
     "z_new_share": zscore_series(designer_metrics.get("new_share_3m")),
-    "z_new_churn": -zscore_series(designer_metrics.get("new_churn_rate_3m")),
+    "z_new_per_day": zscore_series(designer_metrics.get("new_per_active_day_3m")),
 })
-designer_metrics["new_z"] = new_z.mean(axis=1, skipna=True)
-designer_metrics["new_rel"] = reliability_factor(designer_metrics.get("new_customers_3m"))
-designer_metrics["new_score"] = designer_metrics["new_z"] * designer_metrics["new_rel"]
-designer_metrics["new_score_0100"] = np.clip(50 + 10 * designer_metrics["new_score"], 0, 100)
+designer_metrics["new_acq_z"] = new_acq_z.mean(axis=1, skipna=True)
+designer_metrics["new_acq_rel"] = reliability_factor(designer_metrics.get("new_customers_3m"))
+designer_metrics["new_acq_score"] = designer_metrics["new_acq_z"] * designer_metrics["new_acq_rel"]
+designer_metrics["new_acq_score_0100"] = np.clip(50 + 10 * designer_metrics["new_acq_score"], 0, 100)
+
+new_ret_z = pd.DataFrame({
+    "z_new_retention": zscore_series(designer_metrics.get("new_retention_rate_3m")),
+})
+designer_metrics["new_ret_z"] = new_ret_z.mean(axis=1, skipna=True)
+designer_metrics["new_ret_rel"] = reliability_factor(designer_metrics.get("new_customers_3m"))
+designer_metrics["new_ret_score"] = designer_metrics["new_ret_z"] * designer_metrics["new_ret_rel"]
+designer_metrics["new_ret_score_0100"] = np.clip(50 + 10 * designer_metrics["new_ret_score"], 0, 100)
 
 convert_z = pd.DataFrame({
     "z_regular_rate": zscore_series(designer_metrics.get("regular_rate_180")),
@@ -1218,8 +1237,10 @@ designer_metrics["stability_rel"] = reliability_factor(designer_metrics.get("act
 designer_metrics["stability_score"] = designer_metrics["stability_z"] * designer_metrics["stability_rel"]
 designer_metrics["stability_score_0100"] = np.clip(50 + 10 * designer_metrics["stability_score"], 0, 100)
 
-block_scores = designer_metrics[["basic_score", "new_score", "convert_score", "retain_score", "stability_score"]]
-weights = np.array([0.2, 0.2, 0.2, 0.2, 0.2])
+block_scores = designer_metrics[
+    ["basic_score", "new_acq_score", "new_ret_score", "convert_score", "retain_score", "stability_score"]
+]
+weights = np.array([1/6, 1/6, 1/6, 1/6, 1/6, 1/6])
 valid_mask = block_scores.notna().values
 weighted = block_scores.fillna(0).values * weights
 weight_sum = (valid_mask * weights).sum(axis=1)
@@ -1348,13 +1369,16 @@ metric_df["合作穩定度(CV)"] = np.where(service_cv.notna(), service_cv, acti
 metric_options = {
     "整合分數(0-100, 高越好)": ("overall_score", "number1", False),
     "基本狀態分數(0-100, 高越好)": ("basic_score_0100", "number1", False),
-    "新客獲取力分數(0-100, 高越好)": ("new_score_0100", "number1", False),
+    "新客獲取力分數(0-100, 高越好)": ("new_acq_score_0100", "number1", False),
+    "新客留存力分數(0-100, 高越好)": ("new_ret_score_0100", "number1", False),
     "熟客轉化力分數(0-100, 高越好)": ("convert_score_0100", "number1", False),
     "熟客經營力分數(0-100, 高越好)": ("retain_score_0100", "number1", False),
     "合作穩定度分數(0-100, 高越好)": ("stability_score_0100", "number1", False),
+    "新客留存率(60天，高越好)": ("new_retention_rate_3m", "percent", False),
     "新客流失率(60天，低越好)": ("new_churn_rate_3m", "percent", True),
     "新客數(3M,滿60天，高越好)": ("new_customers_3m", "number0", False),
     "新客留住人數(3M，高越好)": ("new_retained_3m", "number0", False),
+    "新客/有單天數(3M,高越好)": ("new_per_active_day_3m", "number1", False),
     "新客占比(新客/總單量,高越好)": ("new_share_3m", "percent", False),
     "新客回指率(30天,3M,高越好)": ("new_repeat_rate_3m", "percent", False),
     "新客深度回指率(60天,3M,高越好)": ("new_deep_rate_3m", "percent", False),
@@ -1406,7 +1430,7 @@ else:
             metric_card(
                 "整合分數(0-100)",
                 f"{r['overall_score']:.1f}" if pd.notna(r.get("overall_score")) else "-",
-                "五大區塊（基本、新客獲取、熟客轉化、熟客經營、合作穩定度）等權合成；各指標先做 Z-score 標準化，再依樣本數修正。",
+                "六大區塊（基本、新客獲取、新客留存、熟客轉化、熟客經營、合作穩定度）等權合成；各指標先做 Z-score 標準化，再依樣本數修正。",
                 subtext=sub,
                 tag_text=tag,
                 tag_bg=bg,
@@ -1417,24 +1441,36 @@ else:
             metric_card(
                 "基本狀態分數",
                 f"{r['basic_score_0100']:.1f}" if pd.notna(r.get("basic_score_0100")) else "-",
-                "每月平均有單天數、近3月有單月份數、總單量、空窗率（反向）之 Z-score 平均，並依樣本數修正。",
+                "每月平均有單天數、近3月有單天數、總單量、空窗率（反向）之 Z-score 平均，並依樣本數修正。",
                 subtext=sub,
                 tag_text=tag,
                 tag_bg=bg,
                 tag_color=color,
             )
         with score_cols[2]:
-            sub, tag, bg, color = score_insight(designer_metrics_filtered, "new_score_0100", r.get("new_score_0100"), context_label)
+            sub, tag, bg, color = score_insight(designer_metrics_filtered, "new_acq_score_0100", r.get("new_acq_score_0100"), context_label)
             metric_card(
                 "新客獲取力分數",
-                f"{r['new_score_0100']:.1f}" if pd.notna(r.get("new_score_0100")) else "-",
-                "新客占比（新客數/總單量）與新客流失率（反向）的 Z-score 平均，並依樣本數修正。",
+                f"{r['new_acq_score_0100']:.1f}" if pd.notna(r.get("new_acq_score_0100")) else "-",
+                "新客占比（新客數/總單量）與新客/有單天數的 Z-score 平均，並依樣本數修正。",
                 subtext=sub,
                 tag_text=tag,
                 tag_bg=bg,
                 tag_color=color,
             )
         with score_cols[3]:
+            sub, tag, bg, color = score_insight(designer_metrics_filtered, "new_ret_score_0100", r.get("new_ret_score_0100"), context_label)
+            metric_card(
+                "新客留存力分數",
+                f"{r['new_ret_score_0100']:.1f}" if pd.notna(r.get("new_ret_score_0100")) else "-",
+                "新客留存率（= 1 - 流失率）的 Z-score，並依樣本數修正。",
+                subtext=sub,
+                tag_text=tag,
+                tag_bg=bg,
+                tag_color=color,
+            )
+        score_cols2 = st.columns(3)
+        with score_cols2[0]:
             sub, tag, bg, color = score_insight(designer_metrics_filtered, "convert_score_0100", r.get("convert_score_0100"), context_label)
             metric_card(
                 "熟客轉化力分數",
@@ -1445,8 +1481,7 @@ else:
                 tag_bg=bg,
                 tag_color=color,
             )
-        score_cols2 = st.columns(4)
-        with score_cols2[0]:
+        with score_cols2[1]:
             sub, tag, bg, color = score_insight(designer_metrics_filtered, "retain_score_0100", r.get("retain_score_0100"), context_label)
             metric_card(
                 "熟客經營力分數",
@@ -1457,7 +1492,7 @@ else:
                 tag_bg=bg,
                 tag_color=color,
             )
-        with score_cols2[1]:
+        with score_cols2[2]:
             sub, tag, bg, color = score_insight(designer_metrics_filtered, "stability_score_0100", r.get("stability_score_0100"), context_label)
             metric_card(
                 "合作穩定度分數",
@@ -1508,15 +1543,43 @@ else:
             )
         with c2:
             metric_card(
+                "新客/有單天數(3M)",
+                f"{r['new_per_active_day_3m']:.2f}" if pd.notna(r.get("new_per_active_day_3m")) else "-",
+                "近 3 個月新客數 / 有單天數。",
+            )
+        with c3:
+            metric_card(
                 "新客數(3M,滿60天)",
                 f"{int(r['new_customers_3m'])}" if pd.notna(r.get("new_customers_3m")) else "-",
                 "近 3 個月新客中已滿 60 天者。",
             )
-        with c3:
+        with c4:
+            metric_card(
+                "總單量(3M)",
+                f"{int(r['total_orders_3m'])}" if pd.notna(r.get("total_orders_3m")) else "-",
+                "近 3 個月的訂單總數。",
+            )
+
+        section_gap()
+        st.markdown("**新客留存力**")
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            metric_card(
+                "新客留存率(60天)",
+                f"{r['new_retention_rate_3m']:.2%}" if pd.notna(r.get("new_retention_rate_3m")) else "-",
+                "滿 60 天新客中，60 天內有回店（同分店）的比例。",
+            )
+        with c2:
             metric_card(
                 "新客流失率(60天)",
                 f"{r['new_churn_rate_3m']:.2%}" if pd.notna(r.get("new_churn_rate_3m")) else "-",
                 "滿 60 天新客中，60 天內未回店（同分店）的比例。",
+            )
+        with c3:
+            metric_card(
+                "流失人數(3M)",
+                f"{int(r['new_churned_3m'])}" if pd.notna(r.get("new_churned_3m")) else "-",
+                "上述滿 60 天新客中的流失人數。",
             )
         with c4:
             metric_card(
@@ -1926,13 +1989,16 @@ else:
             "設計師": "師傅",
             "overall_score": "整合分數(0-100)",
             "basic_score_0100": "基本狀態分數(0-100)",
-            "new_score_0100": "新客獲取力分數(0-100)",
+            "new_acq_score_0100": "新客獲取力分數(0-100)",
+            "new_ret_score_0100": "新客留存力分數(0-100)",
             "convert_score_0100": "熟客轉化力分數(0-100)",
             "retain_score_0100": "熟客經營力分數(0-100)",
             "stability_score_0100": "合作穩定度分數(0-100)",
             "new_share_3m": "新客占比(新客/總單量)",
+            "new_per_active_day_3m": "新客/有單天數(3M)",
             "new_customers_3m": "新客數(3M,滿60天)",
             "new_churn_rate_3m": "新客流失率(60天)",
+            "new_retention_rate_3m": "新客留存率(60天)",
             "total_orders_3m": "總單量(3M)",
             "new_churned_3m": "流失人數(3M)",
             "new_retained_3m": "留住人數(3M)",
@@ -1967,12 +2033,15 @@ else:
         "整合分數(0-100)",
         "基本狀態分數(0-100)",
         "新客獲取力分數(0-100)",
+        "新客留存力分數(0-100)",
         "熟客轉化力分數(0-100)",
         "熟客經營力分數(0-100)",
         "合作穩定度分數(0-100)",
         "新客占比(新客/總單量)",
+        "新客/有單天數(3M)",
         "新客數(3M,滿60天)",
         "新客流失率(60天)",
+        "新客留存率(60天)",
         "流失人數(3M)",
         "留住人數(3M)",
         "新客回指率(30天)",
