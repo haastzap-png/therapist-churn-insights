@@ -611,6 +611,15 @@ designer_metrics = (
     .merge(fam_deep, on="設計師", how="outer")
 )
 
+# 近 3 個月總單量
+orders_recent = merged_store[merged_store["結帳操作時間"] >= start_ts_3m].copy()
+orders_summary = (
+    orders_recent.groupby("設計師")
+    .size()
+    .reset_index(name="total_orders_3m")
+)
+designer_metrics = designer_metrics.merge(orders_summary, on="設計師", how="left")
+
 # 指定率（近 3 個月）
 if "is_requested" in merged_store.columns and merged_store["is_requested"].notna().any():
     request_recent = merged_store[merged_store["結帳操作時間"] >= start_ts_3m].copy()
@@ -876,6 +885,8 @@ metric_df["合作穩定度(CV)"] = np.where(service_cv.notna(), service_cv, acti
 
 metric_options = {
     "新客流失率(60天，低越好)": ("new_churn_rate_3m", "percent", True),
+    "總單量(3M，高越好)": ("total_orders_3m", "number0", False),
+    "新客量(3M,滿60天，高越好)": ("new_customers_3m", "number0", False),
     "新客回指率(30天，高越好)": ("new_repeat_rate_3m", "percent", False),
     "新客深度回指率(60天，高越好)": ("new_deep_rate_3m", "percent", False),
     "熟客回指率(30天，高越好)": ("familiar_repeat_rate_3m", "percent", False),
@@ -921,8 +932,14 @@ else:
         st.info("此師傅在最近 3 個月內沒有足夠資料。")
     else:
         r = selected_row.iloc[0]
+        st.markdown("**第一組｜新客流失率・空窗率・總單量・新客量**")
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("新客流失率(60天)", f"{r['new_churn_rate_3m']:.2%}" if pd.notna(r.get("new_churn_rate_3m")) else "-")
+        c2.metric("空窗率(3M)", f"{r['vacancy_rate_3m']:.2%}" if pd.notna(r.get("vacancy_rate_3m")) else "-")
+        c3.metric("總單量(3M)", f"{int(r['total_orders_3m'])}" if pd.notna(r.get("total_orders_3m")) else "-")
+        c4.metric("新客量(3M,滿60天)", f"{int(r['new_customers_3m'])}" if pd.notna(r.get("new_customers_3m")) else "-")
+
+        st.markdown("**第二組｜新客回指・新客深度回指・熟客回指・熟客深度回指**")
         new_repeat_base = r.get("new_repeat_base_3m")
         if pd.notna(r.get("new_repeat_rate_3m")):
             if min_new_repeat_base > 0 and pd.notna(new_repeat_base) and new_repeat_base < min_new_repeat_base:
@@ -931,24 +948,25 @@ else:
                 new_repeat_display = f"{r['new_repeat_rate_3m']:.2%}"
         else:
             new_repeat_display = "-"
-        c2.metric("新客回指率(30天)", new_repeat_display)
-        c3.metric("熟客回指率(30天)", f"{r['familiar_repeat_rate_3m']:.2%}" if pd.notna(r.get("familiar_repeat_rate_3m")) else "-")
-        c4.metric("空窗率(3M)", f"{r['vacancy_rate_3m']:.2%}" if pd.notna(r.get("vacancy_rate_3m")) else "-")
-
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("新客深度回指(60天)", f"{r['new_deep_rate_3m']:.2%}" if pd.notna(r.get("new_deep_rate_3m")) else "-")
-        c2.metric("熟客深度回指(60天)", f"{r['familiar_deep_rate_3m']:.2%}" if pd.notna(r.get("familiar_deep_rate_3m")) else "-")
-        c3.metric("最近有單距今(天)", f"{int(r['days_since_last_tx'])}" if pd.notna(r.get("days_since_last_tx")) else "-")
-        if pd.notna(r.get("service_hours_cv_6m")):
-            c4.metric("合作穩定度(工時CV)", f"{r['service_hours_cv_6m']:.2f}")
-        else:
-            c4.metric("合作穩定度(出勤CV)", f"{r['active_days_cv_6m']:.2f}" if pd.notna(r.get("active_days_cv_6m")) else "-")
+        c1.metric("新客回指率(30天)", new_repeat_display)
+        c2.metric("新客深度回指(60天)", f"{r['new_deep_rate_3m']:.2%}" if pd.notna(r.get("new_deep_rate_3m")) else "-")
+        c3.metric("熟客回指率(30天)", f"{r['familiar_repeat_rate_3m']:.2%}" if pd.notna(r.get("familiar_repeat_rate_3m")) else "-")
+        c4.metric("熟客深度回指(60天)", f"{r['familiar_deep_rate_3m']:.2%}" if pd.notna(r.get("familiar_deep_rate_3m")) else "-")
 
+        st.markdown("**第三組｜合作穩定度**")
+        c1, c2, c3, c4 = st.columns(4)
+        if pd.notna(r.get("service_hours_cv_6m")):
+            c1.metric("合作穩定度(工時CV)", f"{r['service_hours_cv_6m']:.2f}")
+        else:
+            c1.metric("合作穩定度(出勤CV)", f"{r['active_days_cv_6m']:.2f}" if pd.notna(r.get("active_days_cv_6m")) else "-")
+
+        st.markdown("**補充資訊**")
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("新客回指樣本數", f"{int(new_repeat_base)}" if pd.notna(new_repeat_base) else "-")
         c2.metric("指定率(3M)", f"{r['request_rate_3m']:.2%}" if pd.notna(r.get("request_rate_3m")) else "-")
         c3.metric("指定單數(3M)", f"{int(r['request_yes_3m'])}" if pd.notna(r.get("request_yes_3m")) else "-")
-        c4.metric("總單數(3M)", f"{int(r['request_total_3m'])}" if pd.notna(r.get("request_total_3m")) else "-")
+        c4.metric("最近有單距今(天)", f"{int(r['days_since_last_tx'])}" if pd.notna(r.get("days_since_last_tx")) else "-")
 
         st.caption("回指率以「同師傅、同分店」計算；合作穩定度 CV 越低代表越穩定。")
 
@@ -1215,6 +1233,7 @@ else:
             "familiar_customers_3m": "熟客數(3M,滿30天)",
             "familiar_repeat_rate_3m": "熟客回指率(30天)",
             "familiar_deep_rate_3m": "熟客深度回指率(60天)",
+            "total_orders_3m": "總單量(3M)",
             "request_rate_3m": "指定率(3M)",
             "request_yes_3m": "指定單數(3M)",
             "request_total_3m": "總單數(3M)",
@@ -1226,6 +1245,7 @@ else:
         "師傅",
         "新客數(3M,滿60天)",
         "新客流失率(60天)",
+        "總單量(3M)",
         "新客回指率(30天)",
         "新客回指樣本數",
         "新客深度回指率(60天)",
