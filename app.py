@@ -995,6 +995,9 @@ if not relationship_first.empty:
             )
             .reset_index()
         )
+        retention_summary["post_regular_visits_monthly_avg_180"] = (
+            retention_summary["post_regular_visits_avg_180"] / 6
+        )
         retention_summary["retention_rate_180"] = np.where(
             retention_summary["retention_base_180"] > 0,
             retention_summary["retention_achieved_180"] / retention_summary["retention_base_180"],
@@ -1011,6 +1014,7 @@ if not relationship_first.empty:
         "retention_base_180",
         "retention_achieved_180",
         "post_regular_visits_avg_180",
+        "post_regular_visits_monthly_avg_180",
     ]:
         if col not in designer_metrics.columns:
             designer_metrics[col] = np.nan
@@ -1338,12 +1342,14 @@ metric_options = {
     "新客流失率(60天，低越好)": ("new_churn_rate_3m", "percent", True),
     "新客數(3M,滿60天，高越好)": ("new_customers_3m", "number0", False),
     "新客留住人數(3M，高越好)": ("new_retained_3m", "number0", False),
+    "新客占比(新客/總單量,高越好)": ("new_share_3m", "percent", False),
     "新客回指率(30天,3M,高越好)": ("new_repeat_rate_3m", "percent", False),
     "新客深度回指率(60天,3M,高越好)": ("new_deep_rate_3m", "percent", False),
     "熟客回指率(30天,3M,高越好)": ("familiar_repeat_rate_3m", "percent", False),
     "熟客深度回指率(60天,3M,高越好)": ("familiar_deep_rate_3m", "percent", False),
     "熟客化率(180天達5次，高越好)": ("regular_rate_180", "percent", False),
     "熟客維持率(後180天≥3次，高越好)": ("retention_rate_180", "percent", False),
+    "熟客月均回訪次數(後180天,高越好)": ("post_regular_visits_monthly_avg_180", "number1", False),
     "總單量(3M，高越好)": ("total_orders_3m", "number0", False),
     "指定率(3M，高越好)": ("request_rate_3m", "percent", False),
     "空窗率(3M，低越好)": ("vacancy_rate_3m", "percent", True),
@@ -1576,9 +1582,9 @@ else:
             )
         with c4:
             metric_card(
-                "後180天平均回訪次數",
-                f"{r['post_regular_visits_avg_180']:.1f}" if pd.notna(r.get("post_regular_visits_avg_180")) else "-",
-                "熟客達成後 180 天內平均回訪次數。",
+                "熟客月均回訪次數",
+                f"{r['post_regular_visits_monthly_avg_180']:.2f}" if pd.notna(r.get("post_regular_visits_monthly_avg_180")) else "-",
+                "熟客達成後 180 天內平均回訪次數 / 6 個月。",
             )
 
         section_gap()
@@ -1923,6 +1929,7 @@ else:
             "retention_base_180": "熟客維持樣本數(滿後180天)",
             "retention_achieved_180": "熟客維持達標人數",
             "post_regular_visits_avg_180": "後180天平均回訪次數",
+            "post_regular_visits_monthly_avg_180": "熟客月均回訪次數(後180天)",
             "request_rate_3m": "指定率(3M)",
             "request_yes_3m": "指定單數(3M)",
             "request_total_3m": "總單數(3M)",
@@ -1961,6 +1968,7 @@ else:
         "熟客維持樣本數(滿後180天)",
         "熟客維持達標人數",
         "後180天平均回訪次數",
+        "熟客月均回訪次數(後180天)",
         "指定率(3M)",
         "指定單數(3M)",
         "總單數(3M)",
