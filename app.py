@@ -374,8 +374,6 @@ has_store = "分店" in new_first.columns
 if not has_store:
     st.warning("帳單檔缺少 '分店' 欄位，將無法依分店分組。")
 
-matured = new_first[new_first["matured"]].copy()
-
 # Sidebar filters
 with st.sidebar:
     st.header("篩選")
