@@ -1113,6 +1113,7 @@ basic_z = pd.DataFrame({
 designer_metrics["basic_z"] = basic_z.mean(axis=1, skipna=True)
 designer_metrics["basic_rel"] = reliability_factor(designer_metrics.get("total_orders_3m"))
 designer_metrics["basic_score"] = designer_metrics["basic_z"] * designer_metrics["basic_rel"]
+designer_metrics["basic_score_0100"] = np.clip(50 + 10 * designer_metrics["basic_score"], 0, 100)
 
 new_share = np.where(
     pd.to_numeric(designer_metrics.get("total_orders_3m"), errors="coerce") > 0,
@@ -1127,6 +1128,7 @@ new_z = pd.DataFrame({
 designer_metrics["new_z"] = new_z.mean(axis=1, skipna=True)
 designer_metrics["new_rel"] = reliability_factor(designer_metrics.get("new_customers_3m"))
 designer_metrics["new_score"] = designer_metrics["new_z"] * designer_metrics["new_rel"]
+designer_metrics["new_score_0100"] = np.clip(50 + 10 * designer_metrics["new_score"], 0, 100)
 
 convert_z = pd.DataFrame({
     "z_regular_rate": zscore_series(designer_metrics.get("regular_rate_180")),
@@ -1135,6 +1137,7 @@ convert_z = pd.DataFrame({
 designer_metrics["convert_z"] = convert_z.mean(axis=1, skipna=True)
 designer_metrics["convert_rel"] = reliability_factor(designer_metrics.get("regular_base_180"))
 designer_metrics["convert_score"] = designer_metrics["convert_z"] * designer_metrics["convert_rel"]
+designer_metrics["convert_score_0100"] = np.clip(50 + 10 * designer_metrics["convert_score"], 0, 100)
 
 retain_z = pd.DataFrame({
     "z_retention_rate": zscore_series(designer_metrics.get("retention_rate_180")),
@@ -1143,6 +1146,7 @@ retain_z = pd.DataFrame({
 designer_metrics["retain_z"] = retain_z.mean(axis=1, skipna=True)
 designer_metrics["retain_rel"] = reliability_factor(designer_metrics.get("retention_base_180"))
 designer_metrics["retain_score"] = designer_metrics["retain_z"] * designer_metrics["retain_rel"]
+designer_metrics["retain_score_0100"] = np.clip(50 + 10 * designer_metrics["retain_score"], 0, 100)
 
 block_scores = designer_metrics[["basic_score", "new_score", "convert_score", "retain_score"]]
 weights = np.array([0.25, 0.25, 0.25, 0.25])
@@ -1273,6 +1277,10 @@ metric_df["合作穩定度(CV)"] = np.where(service_cv.notna(), service_cv, acti
 
 metric_options = {
     "整合分數(0-100, 高越好)": ("overall_score", "number1", False),
+    "基本狀態分數(0-100, 高越好)": ("basic_score_0100", "number1", False),
+    "新客獲取力分數(0-100, 高越好)": ("new_score_0100", "number1", False),
+    "熟客轉化力分數(0-100, 高越好)": ("convert_score_0100", "number1", False),
+    "熟客經營力分數(0-100, 高越好)": ("retain_score_0100", "number1", False),
     "新客流失率(60天，低越好)": ("new_churn_rate_3m", "percent", True),
     "新客數(3M,滿60天，高越好)": ("new_customers_3m", "number0", False),
     "新客留住人數(3M，高越好)": ("new_retained_3m", "number0", False),
@@ -1324,6 +1332,31 @@ else:
                 "整合分數(0-100)",
                 f"{r['overall_score']:.1f}" if pd.notna(r.get("overall_score")) else "-",
                 "四大區塊（基本、新客獲取、熟客轉化、熟客經營）等權合成；各指標先做 Z-score 標準化，再依樣本數修正。",
+            )
+        with score_cols[1]:
+            metric_card(
+                "基本狀態分數",
+                f"{r['basic_score_0100']:.1f}" if pd.notna(r.get("basic_score_0100")) else "-",
+                "每月平均有單天數、近3月有單月份數、總單量、空窗率（反向）之 Z-score 平均，並依樣本數修正。",
+            )
+        with score_cols[2]:
+            metric_card(
+                "新客獲取力分數",
+                f"{r['new_score_0100']:.1f}" if pd.notna(r.get("new_score_0100")) else "-",
+                "新客占比（新客數/總單量）與新客流失率（反向）的 Z-score 平均，並依樣本數修正。",
+            )
+        with score_cols[3]:
+            metric_card(
+                "熟客轉化力分數",
+                f"{r['convert_score_0100']:.1f}" if pd.notna(r.get("convert_score_0100")) else "-",
+                "熟客化率與平均達標天數（反向）的 Z-score 平均，並依樣本數修正。",
+            )
+        score_cols2 = st.columns(4)
+        with score_cols2[0]:
+            metric_card(
+                "熟客經營力分數",
+                f"{r['retain_score_0100']:.1f}" if pd.notna(r.get("retain_score_0100")) else "-",
+                "熟客維持率與後180天平均回訪次數的 Z-score 平均，並依樣本數修正。",
             )
         section_gap()
 
@@ -1782,6 +1815,10 @@ else:
         columns={
             "設計師": "師傅",
             "overall_score": "整合分數(0-100)",
+            "basic_score_0100": "基本狀態分數(0-100)",
+            "new_score_0100": "新客獲取力分數(0-100)",
+            "convert_score_0100": "熟客轉化力分數(0-100)",
+            "retain_score_0100": "熟客經營力分數(0-100)",
             "new_customers_3m": "新客數(3M,滿60天)",
             "new_churn_rate_3m": "新客流失率(60天)",
             "total_orders_3m": "總單量(3M)",
@@ -1815,6 +1852,10 @@ else:
     cols = [
         "師傅",
         "整合分數(0-100)",
+        "基本狀態分數(0-100)",
+        "新客獲取力分數(0-100)",
+        "熟客轉化力分數(0-100)",
+        "熟客經營力分數(0-100)",
         "新客數(3M,滿60天)",
         "新客流失率(60天)",
         "流失人數(3M)",
