@@ -58,7 +58,6 @@ st.markdown(
 }
 html, body, [class*="css"] {
   font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
-  color: var(--ink);
 }
 .stApp {
   background:
@@ -74,38 +73,43 @@ h1 {
   font-size: 2.2rem;
   color: var(--ink);
 }
-section.main .stTitle,
-section.main .stHeader,
-section.main .stSubheader {
+div[data-testid="stAppViewContainer"] section.main,
+div[data-testid="stAppViewContainer"] .main {
   color: var(--ink) !important;
 }
-section.main h1,
-section.main h2,
-section.main h3,
-section.main h4 {
+div[data-testid="stAppViewContainer"] section.main .stMarkdown,
+div[data-testid="stAppViewContainer"] section.main .stMarkdown *,
+div[data-testid="stAppViewContainer"] .main .stMarkdown,
+div[data-testid="stAppViewContainer"] .main .stMarkdown * {
   color: var(--ink) !important;
+  opacity: 1 !important;
 }
-section.main .stMarkdown,
-section.main .stMarkdown * {
-  color: var(--ink) !important;
-}
-section.main .stCaption,
-section.main .stCaption * {
+div[data-testid="stAppViewContainer"] section.main .stCaption,
+div[data-testid="stAppViewContainer"] section.main .stCaption *,
+div[data-testid="stAppViewContainer"] .main .stCaption,
+div[data-testid="stAppViewContainer"] .main .stCaption * {
   color: var(--muted) !important;
+  opacity: 1 !important;
 }
-div[data-testid="stAppViewContainer"] section.main h1,
-div[data-testid="stAppViewContainer"] section.main h2,
-div[data-testid="stAppViewContainer"] section.main h3,
-div[data-testid="stAppViewContainer"] section.main h4,
-div[data-testid="stAppViewContainer"] section.main p,
-div[data-testid="stAppViewContainer"] section.main li,
-div[data-testid="stAppViewContainer"] section.main span {
+div[data-testid="stAppViewContainer"] section.main label,
+div[data-testid="stAppViewContainer"] .main label {
   color: var(--ink) !important;
+  opacity: 1 !important;
 }
-div[data-testid="stHeader"] h1,
-div[data-testid="stHeader"] h2,
-div[data-testid="stHeader"] h3 {
+div[data-testid="stAppViewContainer"] section.main div[data-testid="stMetricValue"],
+div[data-testid="stAppViewContainer"] .main div[data-testid="stMetricValue"] {
   color: var(--ink) !important;
+  opacity: 1 !important;
+}
+div[data-testid="stAppViewContainer"] section.main div[data-testid="stMetricLabel"],
+div[data-testid="stAppViewContainer"] .main div[data-testid="stMetricLabel"] {
+  color: var(--muted) !important;
+  opacity: 1 !important;
+}
+div[data-testid="stAppViewContainer"] section.main div[data-testid="stMetricDelta"],
+div[data-testid="stAppViewContainer"] .main div[data-testid="stMetricDelta"] {
+  color: var(--muted) !important;
+  opacity: 1 !important;
 }
 div[data-testid="stSidebar"] {
   background: #faf7f2;
@@ -121,6 +125,7 @@ div[data-testid="stMetric"] {
 div[data-testid="stMetric"] label {
   color: var(--muted);
   font-weight: 600;
+  opacity: 1 !important;
 }
 .section-note {
   padding: 8px 12px;
@@ -156,16 +161,16 @@ with st.sidebar:
         default=["服務", "票券"],
     )
     chart_top_n = st.number_input("圖表顯示前 N 名（0=全部）", min_value=0, max_value=100, value=0, step=1)
+    min_repeat_base = st.number_input("回指率最低樣本數（低於則不顯示）", min_value=1, max_value=100, value=5, step=1)
     store_chart_type = st.selectbox("分店比較圖表", ["群組直條圖", "熱度圖", "堆疊條圖"])
 
 st.write("""
 本工具會：
 - 以全品牌帳單歷史找出新客，並計算 60 天內是否回店（同分店）
-- 依分店/師傅呈現出勤狀態、新客流失、熟客化與熟客維持、空窗率與合作穩定度
+- 依分店/師傅呈現出勤狀態（每月平均有單天數、近 3 月有單月份數）、新客流失、熟客化與熟客維持、空窗率與合作穩定度
 - 提供圖表與排行榜，快速看出差異
 熟客定義：同分店同師傅，180 天內消費 ≥5 次
 熟客維持：熟客達成後 180 天內回訪 ≥3 次
-出勤狀態：上月是否有單、近 3 月有單月份數、連續無單月數
 回指判定：T2=30 天、T3=60 天（固定，作為輔助指標）
 空窗率計算：依項目分鐘估算時長（1～30=0.5；31～60=1；61～90=1.5，以此類推），月上限 168 小時
 """)
@@ -318,7 +323,7 @@ def render_bar_chart(df, category_col, value_col, title, color="#2b7a78", top_n=
                 f"{category_col}:N",
                 sort=alt.SortField(field=value_col, order="ascending" if ascending else "descending"),
                 title="",
-                axis=alt.Axis(labelLimit=0, labelOverlap=False),
+                axis=alt.Axis(labelLimit=0, labelOverlap=False, labelPadding=6, labelFontSize=12),
             ),
             x=alt.X(f"{value_col}:Q", axis=alt.Axis(format=axis_format, title=title)),
             tooltip=tooltip,
@@ -356,7 +361,7 @@ def render_rank_bar(df, name_col, value_col, title, ascending, value_format, col
             f"{name_col}:N",
             sort=alt.SortField(field=value_col, order="ascending" if ascending else "descending"),
             title="",
-            axis=alt.Axis(labelLimit=0, labelOverlap=False),
+            axis=alt.Axis(labelLimit=0, labelOverlap=False, labelPadding=6, labelFontSize=12),
         ),
         x=alt.X(f"{value_col}:Q", axis=alt.Axis(format=axis_format, title=title)),
         tooltip=tooltip,
@@ -634,6 +639,9 @@ new_by_designer["new_repeat_rate_3m"] = np.where(
     new_by_designer["new_repeat2_count"] / new_by_designer["new_repeat_base_3m"],
     np.nan,
 )
+new_by_designer.loc[
+    new_by_designer["new_repeat_base_3m"] < min_repeat_base, "new_repeat_rate_3m"
+] = np.nan
 
 new_recent3 = new_recent[new_recent["matured_3"]].copy()
 new_deep = (
@@ -641,6 +649,7 @@ new_deep = (
     .agg(new_deep_rate_3m=("repeat3", "mean"), new_deep_n=("repeat3", "count"))
     .reset_index()
 )
+new_deep.loc[new_deep["new_deep_n"] < min_repeat_base, "new_deep_rate_3m"] = np.nan
 
 # 熟客經營力（近 3 個月，同分店熟客）
 history = merged_store[merged_store["結帳操作時間"] < start_ts_3m]
@@ -694,12 +703,16 @@ fam_by_designer["familiar_repeat_rate_3m"] = np.where(
     fam_by_designer["familiar_repeat2_count"] / fam_by_designer["familiar_customers_3m"],
     np.nan,
 )
+fam_by_designer.loc[
+    fam_by_designer["familiar_customers_3m"] < min_repeat_base, "familiar_repeat_rate_3m"
+] = np.nan
 
 fam_deep = (
     fam_recent3.groupby("設計師")
     .agg(familiar_deep_rate_3m=("repeat3", "mean"), familiar_deep_n=("repeat3", "count"))
     .reset_index()
 )
+fam_deep.loc[fam_deep["familiar_deep_n"] < min_repeat_base, "familiar_deep_rate_3m"] = np.nan
 
 # 合併師傅指標
 designer_metrics = (
@@ -1084,6 +1097,7 @@ if has_store and store_monthly_avg is not None and not store_monthly_avg.empty:
 
 st.subheader("師傅指標比較")
 st.caption("新客流失/空窗/總單量以近 3 個月計；熟客化/維持以近 12 個月 cohort 且滿 180 天計。")
+st.caption(f"回指率(30/60天)僅顯示樣本數 ≥ {int(min_repeat_base)}。")
 metric_df = designer_metrics_filtered.copy()
 service_cv = metric_df["service_hours_cv_6m"] if "service_hours_cv_6m" in metric_df.columns else pd.Series(np.nan, index=metric_df.index)
 active_cv = metric_df["active_days_cv_6m"] if "active_days_cv_6m" in metric_df.columns else pd.Series(np.nan, index=metric_df.index)
@@ -1093,6 +1107,10 @@ metric_options = {
     "新客流失率(60天，低越好)": ("new_churn_rate_3m", "percent", True),
     "新客數(3M,滿60天，高越好)": ("new_customers_3m", "number0", False),
     "新客留住人數(3M，高越好)": ("new_retained_3m", "number0", False),
+    "新客回指率(30天,3M,高越好)": ("new_repeat_rate_3m", "percent", False),
+    "新客深度回指率(60天,3M,高越好)": ("new_deep_rate_3m", "percent", False),
+    "熟客回指率(30天,3M,高越好)": ("familiar_repeat_rate_3m", "percent", False),
+    "熟客深度回指率(60天,3M,高越好)": ("familiar_deep_rate_3m", "percent", False),
     "熟客化率(180天達5次，高越好)": ("regular_rate_180", "percent", False),
     "熟客維持率(後180天≥3次，高越好)": ("retention_rate_180", "percent", False),
     "總單量(3M，高越好)": ("total_orders_3m", "number0", False),
@@ -1465,6 +1483,14 @@ else:
             "total_orders_3m": "總單量(3M)",
             "new_churned_3m": "流失人數(3M)",
             "new_retained_3m": "留住人數(3M)",
+            "new_repeat_rate_3m": "新客回指率(30天)",
+            "new_repeat_base_3m": "新客回指樣本數(30天)",
+            "new_deep_rate_3m": "新客深度回指率(60天)",
+            "new_deep_n": "新客深度回指樣本數(60天)",
+            "familiar_repeat_rate_3m": "熟客回指率(30天)",
+            "familiar_customers_3m": "熟客回指樣本數(30天)",
+            "familiar_deep_rate_3m": "熟客深度回指率(60天)",
+            "familiar_deep_n": "熟客深度回指樣本數(60天)",
             "avg_active_days_3m": "每月平均有單天數(近3月)",
             "active_months_3m": "近3月有單月份數",
             "regular_rate_180": "熟客化率(180天達5次)",
@@ -1488,6 +1514,14 @@ else:
         "新客流失率(60天)",
         "流失人數(3M)",
         "留住人數(3M)",
+        "新客回指率(30天)",
+        "新客回指樣本數(30天)",
+        "新客深度回指率(60天)",
+        "新客深度回指樣本數(60天)",
+        "熟客回指率(30天)",
+        "熟客回指樣本數(30天)",
+        "熟客深度回指率(60天)",
+        "熟客深度回指樣本數(60天)",
         "總單量(3M)",
         "每月平均有單天數(近3月)",
         "近3月有單月份數",
