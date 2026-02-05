@@ -628,6 +628,18 @@ def add_repeat_flags(df, list_map, key_cols, first_col, t2, t3):
     df["repeat3"] = repeat3
     return df
 
+def zscore_series(series):
+    s = pd.to_numeric(series, errors="coerce")
+    mean = s.mean()
+    std = s.std()
+    if std == 0 or pd.isna(std):
+        return pd.Series(np.nan, index=s.index)
+    return (s - mean) / std
+
+def reliability_factor(n, n0=30):
+    n = pd.to_numeric(n, errors="coerce")
+    return np.where((n > 0) & pd.notna(n), np.minimum(1, np.sqrt(n / n0)), np.nan)
+
 def add_regular_metrics(df, list_map, key_cols, baseline_col):
     regular_counts = []
     regular_achieved = []
@@ -1090,6 +1102,57 @@ last_tx = (
 last_tx["days_since_last_tx"] = (end_ts - last_tx["last_tx"]).dt.days
 stability_by_designer = stability_by_designer.merge(last_tx, on="設計師", how="left")
 designer_metrics = designer_metrics.merge(stability_by_designer, on="設計師", how="left")
+
+# 四大區塊整合分數（Z-score + 樣本數修正）
+basic_z = pd.DataFrame({
+    "z_active_days": zscore_series(designer_metrics.get("avg_active_days_3m")),
+    "z_active_months": zscore_series(designer_metrics.get("active_months_3m")),
+    "z_total_orders": zscore_series(designer_metrics.get("total_orders_3m")),
+    "z_vacancy": -zscore_series(designer_metrics.get("vacancy_rate_3m")),
+})
+designer_metrics["basic_z"] = basic_z.mean(axis=1, skipna=True)
+designer_metrics["basic_rel"] = reliability_factor(designer_metrics.get("total_orders_3m"))
+designer_metrics["basic_score"] = designer_metrics["basic_z"] * designer_metrics["basic_rel"]
+
+new_share = np.where(
+    pd.to_numeric(designer_metrics.get("total_orders_3m"), errors="coerce") > 0,
+    pd.to_numeric(designer_metrics.get("new_customers_3m"), errors="coerce")
+    / pd.to_numeric(designer_metrics.get("total_orders_3m"), errors="coerce"),
+    np.nan,
+)
+new_z = pd.DataFrame({
+    "z_new_share": zscore_series(pd.Series(new_share)),
+    "z_new_churn": -zscore_series(designer_metrics.get("new_churn_rate_3m")),
+})
+designer_metrics["new_z"] = new_z.mean(axis=1, skipna=True)
+designer_metrics["new_rel"] = reliability_factor(designer_metrics.get("new_customers_3m"))
+designer_metrics["new_score"] = designer_metrics["new_z"] * designer_metrics["new_rel"]
+
+convert_z = pd.DataFrame({
+    "z_regular_rate": zscore_series(designer_metrics.get("regular_rate_180")),
+    "z_regular_days": -zscore_series(designer_metrics.get("regular_days_avg_180")),
+})
+designer_metrics["convert_z"] = convert_z.mean(axis=1, skipna=True)
+designer_metrics["convert_rel"] = reliability_factor(designer_metrics.get("regular_base_180"))
+designer_metrics["convert_score"] = designer_metrics["convert_z"] * designer_metrics["convert_rel"]
+
+retain_z = pd.DataFrame({
+    "z_retention_rate": zscore_series(designer_metrics.get("retention_rate_180")),
+    "z_post_visits": zscore_series(designer_metrics.get("post_regular_visits_avg_180")),
+})
+designer_metrics["retain_z"] = retain_z.mean(axis=1, skipna=True)
+designer_metrics["retain_rel"] = reliability_factor(designer_metrics.get("retention_base_180"))
+designer_metrics["retain_score"] = designer_metrics["retain_z"] * designer_metrics["retain_rel"]
+
+block_scores = designer_metrics[["basic_score", "new_score", "convert_score", "retain_score"]]
+weights = np.array([0.25, 0.25, 0.25, 0.25])
+valid_mask = block_scores.notna().values
+weighted = block_scores.fillna(0).values * weights
+weight_sum = (valid_mask * weights).sum(axis=1)
+overall_z = np.where(weight_sum > 0, weighted.sum(axis=1) / weight_sum, np.nan)
+designer_metrics["overall_score_z"] = overall_z
+designer_metrics["overall_score"] = np.clip(50 + 10 * overall_z, 0, 100)
+
 designer_metrics_filtered = designer_metrics[designer_metrics["設計師"].isin(designer_filter)].copy()
 
 overall = {
@@ -1209,6 +1272,7 @@ active_cv = metric_df["active_days_cv_6m"] if "active_days_cv_6m" in metric_df.c
 metric_df["合作穩定度(CV)"] = np.where(service_cv.notna(), service_cv, active_cv)
 
 metric_options = {
+    "整合分數(0-100, 高越好)": ("overall_score", "number1", False),
     "新客流失率(60天，低越好)": ("new_churn_rate_3m", "percent", True),
     "新客數(3M,滿60天，高越好)": ("new_customers_3m", "number0", False),
     "新客留住人數(3M，高越好)": ("new_retained_3m", "number0", False),
@@ -1253,6 +1317,16 @@ else:
         st.info("此師傅在最近 3 個月內沒有足夠資料。")
     else:
         r = selected_row.iloc[0]
+        st.markdown("**整合分數**")
+        score_cols = st.columns(4)
+        with score_cols[0]:
+            metric_card(
+                "整合分數(0-100)",
+                f"{r['overall_score']:.1f}" if pd.notna(r.get("overall_score")) else "-",
+                "四大區塊（基本、新客獲取、熟客轉化、熟客經營）等權合成；各指標先做 Z-score 標準化，再依樣本數修正。",
+            )
+        section_gap()
+
         st.markdown("**基本狀態**")
         c1, c2, c3, c4 = st.columns(4)
         with c1:
@@ -1707,6 +1781,7 @@ else:
     designer_table = designer_table.rename(
         columns={
             "設計師": "師傅",
+            "overall_score": "整合分數(0-100)",
             "new_customers_3m": "新客數(3M,滿60天)",
             "new_churn_rate_3m": "新客流失率(60天)",
             "total_orders_3m": "總單量(3M)",
@@ -1739,6 +1814,7 @@ else:
     )
     cols = [
         "師傅",
+        "整合分數(0-100)",
         "新客數(3M,滿60天)",
         "新客流失率(60天)",
         "流失人數(3M)",
