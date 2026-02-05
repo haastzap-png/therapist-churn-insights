@@ -208,6 +208,16 @@ def norm_digits(x):
     digits = re.sub(r"\D+", "", s)
     return digits or None
 
+def norm_yes_no(x):
+    if pd.isna(x):
+        return None
+    s = str(x).strip().upper()
+    if s in ("Y", "YES", "TRUE", "1", "指定", "是"):
+        return True
+    if s in ("N", "NO", "FALSE", "0", "非指定", "否"):
+        return False
+    return None
+
 def extract_minutes(item_text):
     if pd.isna(item_text):
         return 0
@@ -331,6 +341,10 @@ bills["phone_key"] = bills["國碼"].fillna("") + "-" + bills["電話號碼"].fi
 valid_bills = bills[bills["phone_key"].str.contains("-") & (bills["phone_key"] != "-")].copy()
 
 valid_bills["結帳操作時間"] = pd.to_datetime(valid_bills["結帳操作時間"], errors="coerce")
+if "指定" in valid_bills.columns:
+    valid_bills["is_requested"] = valid_bills["指定"].apply(norm_yes_no)
+else:
+    valid_bills["is_requested"] = pd.NA
 
 # Merge member data (optional)
 merged = valid_bills.copy()
@@ -392,6 +406,13 @@ with st.sidebar:
     exclude_designers = st.multiselect("排除師傅", designer_options, default=[])
     include_options = [d for d in designer_options if d not in set(exclude_designers)]
     designer_filter = st.multiselect("師傅", include_options, default=include_options)
+    min_new_repeat_base = st.number_input(
+        "新客回指率最小樣本數(滿30天)",
+        min_value=0,
+        value=5,
+        step=1,
+        help="低於此樣本數的師傅將不納入新客回指率排名/圖表。設為 0 表示不排除。",
+    )
 
 merged_store = merged.copy()
 if has_store and store_filter is not None:
@@ -589,6 +610,27 @@ designer_metrics = (
     .merge(fam_by_designer, on="設計師", how="outer")
     .merge(fam_deep, on="設計師", how="outer")
 )
+
+# 指定率（近 3 個月）
+if "is_requested" in merged_store.columns and merged_store["is_requested"].notna().any():
+    request_recent = merged_store[merged_store["結帳操作時間"] >= start_ts_3m].copy()
+    request_recent["is_requested_num"] = request_recent["is_requested"].map({True: 1, False: 0})
+    request_summary = (
+        request_recent.groupby("設計師")["is_requested_num"]
+        .agg(request_yes_3m="sum", request_total_3m="count")
+        .reset_index()
+    )
+    request_summary["request_rate_3m"] = np.where(
+        request_summary["request_total_3m"] > 0,
+        request_summary["request_yes_3m"] / request_summary["request_total_3m"],
+        np.nan,
+    )
+    designer_metrics = designer_metrics.merge(request_summary, on="設計師", how="left")
+else:
+    designer_metrics["request_rate_3m"] = np.nan
+    designer_metrics["request_yes_3m"] = np.nan
+    designer_metrics["request_total_3m"] = np.nan
+    st.warning("帳單檔缺少「指定」欄位或無有效值，指定率將不計算。")
 
 # Store monthly summary (average per month)
 store_monthly_avg = None
@@ -838,6 +880,7 @@ metric_options = {
     "新客深度回指率(60天，高越好)": ("new_deep_rate_3m", "percent", False),
     "熟客回指率(30天，高越好)": ("familiar_repeat_rate_3m", "percent", False),
     "熟客深度回指率(60天，高越好)": ("familiar_deep_rate_3m", "percent", False),
+    "指定率(3M，高越好)": ("request_rate_3m", "percent", False),
     "空窗率(3M，低越好)": ("vacancy_rate_3m", "percent", True),
     "合作穩定度(CV，低越好)": ("合作穩定度(CV)", "number1", True),
     "最近有單距今(天，低越好)": ("days_since_last_tx", "number1", True),
@@ -846,6 +889,11 @@ metric_options = {
 metric_choice = st.selectbox("選擇指標", list(metric_options.keys()))
 metric_col, metric_fmt, metric_asc = metric_options[metric_choice]
 metric_view = metric_df[["設計師", metric_col]].dropna().copy()
+if metric_col in ("new_repeat_rate_3m", "new_deep_rate_3m") and min_new_repeat_base > 0:
+    base_df = metric_df[["設計師", "new_repeat_base_3m"]].copy()
+    metric_view = metric_view.merge(base_df, on="設計師", how="left")
+    metric_view = metric_view[metric_view["new_repeat_base_3m"] >= min_new_repeat_base]
+    metric_view = metric_view.drop(columns=["new_repeat_base_3m"])
 render_bar_chart(
     metric_view,
     "設計師",
@@ -857,6 +905,8 @@ render_bar_chart(
     orient="horizontal",
     ascending=metric_asc,
 )
+if metric_col in ("new_repeat_rate_3m", "new_deep_rate_3m") and min_new_repeat_base > 0:
+    st.caption(f"新客回指率樣本數小於 {int(min_new_repeat_base)} 的師傅已排除。")
 
 st.subheader("個別師傅狀態（最近 3 個月）")
 st.caption("新客＝全品牌首次；回店口徑＝同分店；回指 T2=30 天、T3=60 天。")
@@ -873,7 +923,15 @@ else:
         r = selected_row.iloc[0]
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("新客流失率(60天)", f"{r['new_churn_rate_3m']:.2%}" if pd.notna(r.get("new_churn_rate_3m")) else "-")
-        c2.metric("新客回指率(30天)", f"{r['new_repeat_rate_3m']:.2%}" if pd.notna(r.get("new_repeat_rate_3m")) else "-")
+        new_repeat_base = r.get("new_repeat_base_3m")
+        if pd.notna(r.get("new_repeat_rate_3m")):
+            if min_new_repeat_base > 0 and pd.notna(new_repeat_base) and new_repeat_base < min_new_repeat_base:
+                new_repeat_display = "樣本不足"
+            else:
+                new_repeat_display = f"{r['new_repeat_rate_3m']:.2%}"
+        else:
+            new_repeat_display = "-"
+        c2.metric("新客回指率(30天)", new_repeat_display)
         c3.metric("熟客回指率(30天)", f"{r['familiar_repeat_rate_3m']:.2%}" if pd.notna(r.get("familiar_repeat_rate_3m")) else "-")
         c4.metric("空窗率(3M)", f"{r['vacancy_rate_3m']:.2%}" if pd.notna(r.get("vacancy_rate_3m")) else "-")
 
@@ -886,10 +944,18 @@ else:
         else:
             c4.metric("合作穩定度(出勤CV)", f"{r['active_days_cv_6m']:.2f}" if pd.notna(r.get("active_days_cv_6m")) else "-")
 
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("新客回指樣本數", f"{int(new_repeat_base)}" if pd.notna(new_repeat_base) else "-")
+        c2.metric("指定率(3M)", f"{r['request_rate_3m']:.2%}" if pd.notna(r.get("request_rate_3m")) else "-")
+        c3.metric("指定單數(3M)", f"{int(r['request_yes_3m'])}" if pd.notna(r.get("request_yes_3m")) else "-")
+        c4.metric("總單數(3M)", f"{int(r['request_total_3m'])}" if pd.notna(r.get("request_total_3m")) else "-")
+
         st.caption("回指率以「同師傅、同分店」計算；合作穩定度 CV 越低代表越穩定。")
 
         # 師傅比較：熟客 vs 新客回指率
         compare_df = designer_metrics_filtered.dropna(subset=["new_repeat_rate_3m", "familiar_repeat_rate_3m"]).copy()
+        if min_new_repeat_base > 0 and "new_repeat_base_3m" in compare_df.columns:
+            compare_df = compare_df[compare_df["new_repeat_base_3m"] >= min_new_repeat_base]
         if not compare_df.empty:
             base = alt.Chart(compare_df).mark_circle(size=60, color="#9aa0a6").encode(
                 x=alt.X("familiar_repeat_rate_3m:Q", axis=alt.Axis(format="%", title="熟客回指率(30天)")),
@@ -944,6 +1010,9 @@ st.subheader("師傅排行榜（Top 6，最近 3 個月）")
 st.caption("新客以全品牌首購；回店口徑同分店；回指 T2=30/T3=60。")
 col_good, col_watch = st.columns(2)
 has_hours_cv = "service_hours_cv_6m" in designer_metrics_filtered.columns and designer_metrics_filtered["service_hours_cv_6m"].notna().any()
+rank_new_repeat = designer_metrics_filtered.dropna(subset=["new_repeat_rate_3m"]).copy()
+if min_new_repeat_base > 0 and "new_repeat_base_3m" in rank_new_repeat.columns:
+    rank_new_repeat = rank_new_repeat[rank_new_repeat["new_repeat_base_3m"] >= min_new_repeat_base]
 
 with col_good:
     st.markdown("<span style='color:#2ca02c;font-weight:700;'>表現較佳</span>", unsafe_allow_html=True)
@@ -966,7 +1035,7 @@ with col_good:
         color="#2ca02c",
     )
     render_rank_bar(
-        designer_metrics_filtered.dropna(subset=["new_repeat_rate_3m"]),
+        rank_new_repeat,
         "設計師",
         "new_repeat_rate_3m",
         "新客回指率最高(30天)",
@@ -974,6 +1043,16 @@ with col_good:
         value_format="percent",
         color="#2ca02c",
     )
+    if "request_rate_3m" in designer_metrics_filtered.columns:
+        render_rank_bar(
+            designer_metrics_filtered.dropna(subset=["request_rate_3m"]),
+            "設計師",
+            "request_rate_3m",
+            "指定率最高(3M)",
+            ascending=False,
+            value_format="percent",
+            color="#2ca02c",
+        )
     if vacancy_recent is None:
         st.info("無法計算空窗率（缺少項目分鐘）。")
     else:
@@ -1028,7 +1107,7 @@ with col_watch:
         color="#d62728",
     )
     render_rank_bar(
-        designer_metrics_filtered.dropna(subset=["new_repeat_rate_3m"]),
+        rank_new_repeat,
         "設計師",
         "new_repeat_rate_3m",
         "新客回指率最低(30天)",
@@ -1036,6 +1115,16 @@ with col_watch:
         value_format="percent",
         color="#d62728",
     )
+    if "request_rate_3m" in designer_metrics_filtered.columns:
+        render_rank_bar(
+            designer_metrics_filtered.dropna(subset=["request_rate_3m"]),
+            "設計師",
+            "request_rate_3m",
+            "指定率最低(3M)",
+            ascending=True,
+            value_format="percent",
+            color="#d62728",
+        )
     if vacancy_recent is None:
         st.info("無法計算空窗率（缺少項目分鐘）。")
     else:
@@ -1121,10 +1210,14 @@ else:
             "new_customers_3m": "新客數(3M,滿60天)",
             "new_churn_rate_3m": "新客流失率(60天)",
             "new_repeat_rate_3m": "新客回指率(30天)",
+            "new_repeat_base_3m": "新客回指樣本數",
             "new_deep_rate_3m": "新客深度回指率(60天)",
             "familiar_customers_3m": "熟客數(3M,滿30天)",
             "familiar_repeat_rate_3m": "熟客回指率(30天)",
             "familiar_deep_rate_3m": "熟客深度回指率(60天)",
+            "request_rate_3m": "指定率(3M)",
+            "request_yes_3m": "指定單數(3M)",
+            "request_total_3m": "總單數(3M)",
             "vacancy_rate_3m": "空窗率(3M)",
             "days_since_last_tx": "最近有單距今(天)",
         }
@@ -1134,10 +1227,14 @@ else:
         "新客數(3M,滿60天)",
         "新客流失率(60天)",
         "新客回指率(30天)",
+        "新客回指樣本數",
         "新客深度回指率(60天)",
         "熟客數(3M,滿30天)",
         "熟客回指率(30天)",
         "熟客深度回指率(60天)",
+        "指定率(3M)",
+        "指定單數(3M)",
+        "總單數(3M)",
         "空窗率(3M)",
         "合作穩定度(CV)",
         "最近有單距今(天)",
