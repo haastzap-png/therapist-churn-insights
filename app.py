@@ -74,25 +74,24 @@ h1 {
   font-size: 2.2rem;
   color: var(--ink);
 }
-.stTitle, .stHeader, .stSubheader {
+section.main .stTitle,
+section.main .stHeader,
+section.main .stSubheader {
   color: var(--ink) !important;
 }
-.stMarkdown, .stMarkdown *, .stMarkdown p, .stMarkdown span, .stMarkdown li, .stMarkdown strong, .stMarkdown em {
+section.main h1,
+section.main h2,
+section.main h3,
+section.main h4 {
   color: var(--ink) !important;
 }
-.stCaption, .stCaption * {
+section.main .stMarkdown,
+section.main .stMarkdown * {
+  color: var(--ink) !important;
+}
+section.main .stCaption,
+section.main .stCaption * {
   color: var(--muted) !important;
-}
-div[data-testid="stHeader"] h1,
-div[data-testid="stHeader"] h2,
-div[data-testid="stHeader"] h3,
-div[data-testid="stHeader"] h4 {
-  color: var(--ink) !important;
-}
-section.main h1, section.main h2, section.main h3, section.main h4,
-section.main p, section.main li, section.main span, section.main strong, section.main em,
-section.main label, section.main div {
-  color: var(--ink) !important;
 }
 div[data-testid="stSidebar"] {
   background: #faf7f2;
