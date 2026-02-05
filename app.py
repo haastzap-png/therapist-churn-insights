@@ -729,6 +729,49 @@ def median_suffix(df, col, fmt):
         formatted = f"{med:.0f}"
     return f"中位數 {formatted}"
 
+def _fmt_alt(fmt_key, delta=False):
+    if fmt_key == "percent":
+        return "+.1%" if delta else ".1%"
+    if fmt_key == "number1":
+        return "+.1f" if delta else ".1f"
+    return "+.0f" if delta else ".0f"
+
+def build_delta_map(df, selected_name, x_col, y_col, x_label, y_label, x_fmt, y_fmt, x_reverse=False, y_reverse=False):
+    view = df[["設計師", x_col, y_col]].dropna().copy()
+    if view.empty:
+        return None
+    selected_row = view[view["設計師"] == selected_name]
+    if selected_row.empty:
+        return None
+    base_x = selected_row.iloc[0][x_col]
+    base_y = selected_row.iloc[0][y_col]
+    view["x_delta"] = (base_x - view[x_col]) if x_reverse else (view[x_col] - base_x)
+    view["y_delta"] = (base_y - view[y_col]) if y_reverse else (view[y_col] - base_y)
+    view["is_selected"] = view["設計師"] == selected_name
+
+    x_axis = alt.Axis(format=_fmt_alt(x_fmt, delta=True), title=x_label)
+    y_axis = alt.Axis(format=_fmt_alt(y_fmt, delta=True), title=y_label)
+
+    base = alt.Chart(view).mark_circle(size=70, color="#bdbdbd").encode(
+        x=alt.X("x_delta:Q", axis=x_axis),
+        y=alt.Y("y_delta:Q", axis=y_axis),
+        tooltip=[
+            "設計師",
+            alt.Tooltip(x_col, title="X 原始值", format=_fmt_alt(x_fmt)),
+            alt.Tooltip(y_col, title="Y 原始值", format=_fmt_alt(y_fmt)),
+            alt.Tooltip("x_delta:Q", title="X 差距", format=_fmt_alt(x_fmt, delta=True)),
+            alt.Tooltip("y_delta:Q", title="Y 差距", format=_fmt_alt(y_fmt, delta=True)),
+        ],
+    )
+    highlight = alt.Chart(view[view["is_selected"]]).mark_circle(size=160, color="#e15759").encode(
+        x="x_delta:Q",
+        y="y_delta:Q",
+        tooltip=["設計師"],
+    )
+    rule_x = alt.Chart(pd.DataFrame({"x": [0]})).mark_rule(color="#d6c9b8").encode(x="x:Q")
+    rule_y = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color="#d6c9b8").encode(y="y:Q")
+    return (rule_x + rule_y + base + highlight).properties(height=320)
+
 def add_regular_metrics(df, list_map, key_cols, baseline_col):
     regular_counts = []
     regular_achieved = []
@@ -1806,20 +1849,86 @@ else:
 
         st.caption("熟客化/熟客維持皆以「同分店、同師傅」計算；合作穩定度 CV 越低代表越穩定。")
 
-        # 師傅比較：熟客化率 vs 熟客維持率
-        compare_df = designer_metrics_filtered.dropna(subset=["regular_rate_180", "retention_rate_180"]).copy()
-        if not compare_df.empty:
-            base = alt.Chart(compare_df).mark_circle(size=60, color="#9aa0a6").encode(
-                x=alt.X("regular_rate_180:Q", axis=alt.Axis(format="%", title="熟客化率(180天達5次)")),
-                y=alt.Y("retention_rate_180:Q", axis=alt.Axis(format="%", title="熟客維持率(後180天≥3次)")),
-                tooltip=["設計師", alt.Tooltip("regular_rate_180:Q", format=".2%"), alt.Tooltip("retention_rate_180:Q", format=".2%")],
-            )
-            highlight = alt.Chart(compare_df[compare_df["設計師"] == designer_select]).mark_circle(size=140, color="#e15759").encode(
-                x="regular_rate_180:Q",
-                y="retention_rate_180:Q",
-                tooltip=["設計師"],
-            )
-            st.altair_chart(base + highlight, use_container_width=True)
+        st.subheader("差距地圖（以選定師傅為中心）")
+        st.caption("中心點為選定師傅 (0,0)；其餘點表示與他在 X/Y 指標上的差距。")
+
+        map_defs = [
+            {
+                "name": "穩定性地圖",
+                "x": "stability_score_0100",
+                "y": "basic_score_0100",
+                "x_label": "合作穩定度差距(分數)",
+                "y_label": "基本狀態差距(分數)",
+                "x_fmt": "number1",
+                "y_fmt": "number1",
+            },
+            {
+                "name": "新客成長地圖",
+                "x": "new_per_active_day_3m",
+                "y": "new_retention_rate_3m",
+                "x_label": "新客/有單天數差距",
+                "y_label": "新客留存率差距(%)",
+                "x_fmt": "number1",
+                "y_fmt": "percent",
+            },
+            {
+                "name": "新客結構地圖",
+                "x": "new_share_3m",
+                "y": "new_retention_rate_3m",
+                "x_label": "新客占比差距(%)",
+                "y_label": "新客留存率差距(%)",
+                "x_fmt": "percent",
+                "y_fmt": "percent",
+            },
+            {
+                "name": "熟客策略地圖",
+                "x": "regular_rate_180",
+                "y": "retention_rate_180",
+                "x_label": "熟客化率差距(%)",
+                "y_label": "熟客維持率差距(%)",
+                "x_fmt": "percent",
+                "y_fmt": "percent",
+            },
+            {
+                "name": "熟客深度地圖",
+                "x": "retention_rate_180",
+                "y": "post_regular_visits_monthly_avg_180",
+                "x_label": "熟客維持率差距(%)",
+                "y_label": "熟客月均回訪次數差距",
+                "x_fmt": "percent",
+                "y_fmt": "number1",
+            },
+            {
+                "name": "熟客速度地圖",
+                "x": "regular_rate_180",
+                "y": "regular_days_avg_180",
+                "x_label": "熟客化率差距(%)",
+                "y_label": "達標速度差距(天，+代表更快)",
+                "x_fmt": "percent",
+                "y_fmt": "number0",
+                "y_reverse": True,
+            },
+        ]
+
+        map_tabs = st.tabs([m["name"] for m in map_defs])
+        for tab, cfg in zip(map_tabs, map_defs):
+            with tab:
+                chart = build_delta_map(
+                    designer_metrics_filtered,
+                    designer_select,
+                    cfg["x"],
+                    cfg["y"],
+                    cfg["x_label"],
+                    cfg["y_label"],
+                    cfg["x_fmt"],
+                    cfg["y_fmt"],
+                    x_reverse=cfg.get("x_reverse", False),
+                    y_reverse=cfg.get("y_reverse", False),
+                )
+                if chart is None:
+                    st.info("此地圖目前沒有足夠資料。")
+                else:
+                    st.altair_chart(chart, use_container_width=True)
 
         # 成長趨勢（多指標）
         st.subheader("成長趨勢")
