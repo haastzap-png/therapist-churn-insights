@@ -961,13 +961,6 @@ else:
         else:
             c1.metric("合作穩定度(出勤CV)", f"{r['active_days_cv_6m']:.2f}" if pd.notna(r.get("active_days_cv_6m")) else "-")
 
-        st.markdown("**補充資訊**")
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("新客回指樣本數", f"{int(new_repeat_base)}" if pd.notna(new_repeat_base) else "-")
-        c2.metric("指定率(3M)", f"{r['request_rate_3m']:.2%}" if pd.notna(r.get("request_rate_3m")) else "-")
-        c3.metric("指定單數(3M)", f"{int(r['request_yes_3m'])}" if pd.notna(r.get("request_yes_3m")) else "-")
-        c4.metric("最近有單距今(天)", f"{int(r['days_since_last_tx'])}" if pd.notna(r.get("days_since_last_tx")) else "-")
-
         st.caption("回指率以「同師傅、同分店」計算；合作穩定度 CV 越低代表越穩定。")
 
         # 師傅比較：熟客 vs 新客回指率
@@ -987,42 +980,93 @@ else:
             )
             st.altair_chart(base + highlight, use_container_width=True)
 
-        # 成長/下滑曲線（新客/熟客回指率）
-        st.subheader("師傅成長/下滑曲線（回指率）")
+        # 成長趨勢（多指標）
+        st.subheader("成長趨勢")
         new_cohort = new_first_store[new_first_store["設計師"] == designer_select].copy()
         new_cohort["cohort_month"] = new_cohort["結帳操作時間"].dt.to_period("M").dt.to_timestamp()
         new_cohort2 = new_cohort[new_cohort["matured_2"]].copy()
-        new_trend = (
+        new_repeat_trend = (
             new_cohort2.groupby("cohort_month")
             .agg(rate=("repeat2", "mean"), n=("repeat2", "count"))
             .reset_index()
         )
-        new_trend["指標"] = "新客回指率(30天)"
+        new_repeat_trend["指標"] = "新客回指率(30天)"
+
+        new_churn_trend = (
+            new_cohort2.groupby("cohort_month")
+            .agg(rate=("churn", "mean"), n=("churn", "count"))
+            .reset_index()
+        )
+        new_churn_trend["指標"] = "新客流失率(60天)"
 
         fam_cohort = familiar_first[familiar_first["設計師"] == designer_select].copy()
         if not fam_cohort.empty:
             fam_cohort["cohort_month"] = fam_cohort["baseline_time"].dt.to_period("M").dt.to_timestamp()
             fam_cohort2 = fam_cohort[fam_cohort["matured_2"]].copy()
-            fam_trend = (
-                fam_cohort2.groupby("cohort_month")
-                .agg(rate=("repeat2", "mean"), n=("repeat2", "count"))
+            fam_cohort3 = fam_cohort[fam_cohort["matured_3"]].copy()
+            fam_deep_trend = (
+                fam_cohort3.groupby("cohort_month")
+                .agg(rate=("repeat3", "mean"), n=("repeat3", "count"))
                 .reset_index()
             )
-            fam_trend["指標"] = "熟客回指率(30天)"
-            trend_long = pd.concat([new_trend, fam_trend], ignore_index=True)
+            fam_deep_trend["指標"] = "熟客深度回指(60天)"
+
+            trend_long = pd.concat(
+                [new_repeat_trend, new_churn_trend, fam_deep_trend],
+                ignore_index=True,
+            )
         else:
-            trend_long = new_trend.copy()
+            trend_long = pd.concat([new_repeat_trend, new_churn_trend], ignore_index=True)
 
         if not trend_long.empty:
             line = alt.Chart(trend_long.dropna(subset=["rate"])).mark_line(point=True).encode(
                 x=alt.X("cohort_month:T", title="首次來訪月份"),
-                y=alt.Y("rate:Q", axis=alt.Axis(format="%"), title="回指率"),
+                y=alt.Y("rate:Q", axis=alt.Axis(format="%"), title="比率"),
                 color=alt.Color("指標:N", title=""),
                 tooltip=["cohort_month:T", "指標", alt.Tooltip("rate:Q", format=".2%")],
             ).properties(height=280)
             st.altair_chart(line, use_container_width=True)
         else:
             st.info("目前沒有足夠的回指資料繪製趨勢。")
+
+        # 合作穩定度(工時CV)加入成長趨勢（Z-score）
+        cv_trend = None
+        if vacancy_monthly is not None:
+            cv_monthly = vacancy_monthly.copy()
+            cv_monthly = cv_monthly.rename(columns={"duration_hours": "service_hours"})
+            cv_monthly["month_start"] = pd.to_datetime(cv_monthly["month"] + "-01")
+            cv_monthly = cv_monthly[cv_monthly["month_start"] >= start_ts_6m]
+            cv_monthly = cv_monthly[cv_monthly["設計師"] == designer_select]
+            if not cv_monthly.empty:
+                cv_monthly = cv_monthly.sort_values("month_start")
+                cv_series = cv_monthly["service_hours"].rolling(window=6, min_periods=2).apply(
+                    lambda s: s.std() / s.mean() if s.mean() else np.nan,
+                    raw=False,
+                )
+                cv_monthly["cv_6m"] = cv_series.values
+                cv_trend = cv_monthly[["month_start", "cv_6m"]].dropna().rename(
+                    columns={"month_start": "cohort_month", "cv_6m": "rate"}
+                )
+                cv_trend["指標"] = "合作穩定度(工時CV)"
+
+        trend_for_z = trend_long.copy()
+        if cv_trend is not None and not cv_trend.empty:
+            trend_for_z = pd.concat([trend_for_z, cv_trend], ignore_index=True)
+
+        if not trend_for_z.empty:
+            trend_for_z["z"] = trend_for_z.groupby("指標")["rate"].transform(
+                lambda s: (s - s.mean()) / s.std() if s.std() and not np.isnan(s.std()) else np.nan
+            )
+            z_chart = trend_for_z.dropna(subset=["z"])
+            if not z_chart.empty:
+                line_z = alt.Chart(z_chart).mark_line(point=True).encode(
+                    x=alt.X("cohort_month:T", title="月份"),
+                    y=alt.Y("z:Q", title="Z-score"),
+                    color=alt.Color("指標:N", title=""),
+                    tooltip=["cohort_month:T", "指標", alt.Tooltip("z:Q", format=".2f")],
+                ).properties(height=280)
+                st.caption("成長趨勢（Z-score 標準化後合併）")
+                st.altair_chart(line_z, use_container_width=True)
 
 st.subheader("師傅排行榜（Top 6，最近 3 個月）")
 st.caption("新客以全品牌首購；回店口徑同分店；回指 T2=30/T3=60。")
