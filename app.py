@@ -132,7 +132,7 @@ div[data-testid="stMetric"] label {
   background: rgba(43, 122, 120, 0.08);
   border: 1px solid rgba(43, 122, 120, 0.2);
   border-radius: 12px;
-  color: #1f4f4e;
+  color: #1f314f;
   font-size: 0.95rem;
 }
 .stCaption {
