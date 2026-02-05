@@ -238,8 +238,8 @@ div[data-testid="stMetric"] label {
   height: 18px;
 }
 div[data-testid="stExpander"] {
-  margin-top: 8px;
-  margin-bottom: 12px;
+  margin-top: 2px;
+  margin-bottom: 2px;
 }
 </style>
 """,
@@ -1709,6 +1709,28 @@ else:
                 value_suffix=median_suffix(designer_metrics_filtered, "regular_days_avg_180", "number0"),
             )
 
+        # 熟客名單（達標）
+        rel_all = relationship_first[relationship_first["設計師"] == designer_select].copy()
+        if not rel_all.empty:
+            rel_all = rel_all[rel_all["regular_matured_180"]].copy()
+            rel_all["regular_achieved"] = rel_all["regular_achieved"].fillna(False)
+            regular_list = rel_all[rel_all["regular_achieved"] == True].copy()
+            if not regular_list.empty:
+                regular_list["末三碼"] = regular_list["phone_key"].apply(mask_last3)
+                regular_list["關係起點"] = regular_list["baseline_time"]
+                regular_list["熟客達標日"] = regular_list["regular_date"]
+                regular_list["達標天數"] = (regular_list["regular_date"] - regular_list["baseline_time"]).dt.days
+            base_cols = ["末三碼", "分店", "關係起點", "熟客達標日", "達標天數"]
+            if name_col in rel_all.columns:
+                base_cols.insert(1, name_col)
+            label_count = int(r["regular_achieved_180"]) if pd.notna(r.get("regular_achieved_180")) else 0
+            with st.expander(f"查看熟客名單（熟客達標人數：{label_count}）", expanded=False):
+                if regular_list.empty:
+                    st.info("目前沒有熟客達標名單。")
+                else:
+                    show_cols = [c for c in base_cols if c in regular_list.columns]
+                    st.dataframe(regular_list[show_cols].sort_values("熟客達標日"), use_container_width=True)
+
         section_gap()
         st.markdown("**熟客經營力（後 180 天內 ≥3 次）**")
         c1, c2, c3, c4 = st.columns(4)
@@ -1740,6 +1762,27 @@ else:
                 "熟客達成後 180 天內平均回訪次數 / 6 個月。",
                 value_suffix=median_suffix(designer_metrics_filtered, "post_regular_visits_monthly_avg_180", "number1"),
             )
+
+        # 深度熟客名單（維持達標）
+        if not rel_all.empty:
+            retention_base = rel_all[(rel_all["regular_achieved"] == True) & (rel_all["retention_matured_180"])].copy()
+            retention_base["retention_achieved"] = retention_base["retention_achieved"].fillna(False)
+            deep_list = retention_base[retention_base["retention_achieved"] == True].copy()
+            if not deep_list.empty:
+                deep_list["末三碼"] = deep_list["phone_key"].apply(mask_last3)
+                deep_list["關係起點"] = deep_list["baseline_time"]
+                deep_list["熟客達標日"] = deep_list["regular_date"]
+                deep_list["後180天回訪次數"] = deep_list["post_regular_visits_180"]
+            deep_cols = ["末三碼", "分店", "關係起點", "熟客達標日", "後180天回訪次數"]
+            if name_col in retention_base.columns:
+                deep_cols.insert(1, name_col)
+            label_count = int(r["retention_achieved_180"]) if pd.notna(r.get("retention_achieved_180")) else 0
+            with st.expander(f"查看深度熟客名單（熟客維持達標人數：{label_count}）", expanded=False):
+                if deep_list.empty:
+                    st.info("目前沒有深度熟客名單。")
+                else:
+                    show_cols = [c for c in deep_cols if c in deep_list.columns]
+                    st.dataframe(deep_list[show_cols].sort_values("熟客達標日"), use_container_width=True)
 
         section_gap()
         st.markdown("**合作穩定度**")
