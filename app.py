@@ -335,6 +335,14 @@ def norm_yes_no(x):
         return False
     return None
 
+def mask_last3(x):
+    if pd.isna(x):
+        return ""
+    digits = re.sub(r"\D+", "", str(x))
+    if not digits:
+        return ""
+    return digits[-3:] if len(digits) >= 3 else digits
+
 def extract_minutes(item_text):
     if pd.isna(item_text):
         return 0
@@ -1287,6 +1295,36 @@ else:
                 f"{int(r['new_retained_3m'])}" if pd.notna(r.get("new_retained_3m")) else "-",
                 "上述滿 60 天新客中的留住人數。",
             )
+
+        detail_recent = new_recent_churn[new_recent_churn["設計師"] == designer_select].copy()
+        if not detail_recent.empty:
+            detail_recent["末三碼"] = detail_recent["phone_key"].apply(mask_last3)
+            detail_recent["首單時間"] = detail_recent["結帳操作時間"]
+            base_cols = ["末三碼", "分店", "首單時間"]
+            if name_col in detail_recent.columns:
+                base_cols.insert(1, name_col)
+
+            churn_list = detail_recent[detail_recent["churn"]].copy()
+            retained_list = detail_recent[~detail_recent["churn"]].copy()
+            if "return_days_store" in retained_list.columns:
+                retained_list = retained_list.rename(columns={"return_days_store": "回店天數"})
+                retained_cols = base_cols + ["回店天數"]
+            else:
+                retained_cols = base_cols
+
+            with st.expander("查看流失名單（近3月、滿60天）", expanded=False):
+                if churn_list.empty:
+                    st.info("目前沒有流失名單。")
+                else:
+                    show_cols = [c for c in base_cols if c in churn_list.columns]
+                    st.dataframe(churn_list[show_cols].sort_values("首單時間"), use_container_width=True)
+
+            with st.expander("查看留住名單（近3月、滿60天）", expanded=False):
+                if retained_list.empty:
+                    st.info("目前沒有留住名單。")
+                else:
+                    show_cols = [c for c in retained_cols if c in retained_list.columns]
+                    st.dataframe(retained_list[show_cols].sort_values("首單時間"), use_container_width=True)
 
         st.markdown("**熟客化能力（180 天內達 5 次）**")
         c1, c2, c3, c4 = st.columns(4)
