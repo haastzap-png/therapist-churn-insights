@@ -183,6 +183,12 @@ div[data-testid="stMetric"] label {
   margin-left: 10px;
   vertical-align: middle;
 }
+.metric-meta {
+  margin-top: 4px;
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-weight: 600;
+}
 .metric-sub {
   margin-top: 8px;
   font-size: 0.85rem;
@@ -480,13 +486,17 @@ def render_rank_bar(df, name_col, value_col, title, ascending, value_format, col
     height = max(260, 26 * len(chart_df) + 40)
     st.altair_chart((bars + labels).properties(height=height), use_container_width=True)
 
-def metric_card(label, value, help_text, subtext=None, tag_text=None, tag_bg=None, tag_color=None, value_suffix=None):
+def metric_card(label, value, help_text, subtext=None, tag_text=None, tag_bg=None, tag_color=None, value_suffix=None, meta_text=None):
     safe_label = html.escape(str(label))
     safe_value = html.escape(str(value))
     suffix_html = ""
     if value_suffix:
         safe_suffix = html.escape(str(value_suffix))
         suffix_html = f'<span class="metric-suffix">{safe_suffix}</span>'
+    meta_html = ""
+    if meta_text:
+        safe_meta = html.escape(str(meta_text))
+        meta_html = f'<div class="metric-meta">{safe_meta}</div>'
     safe_help = html.escape(str(help_text), quote=True)
     sub_html = ""
     if subtext:
@@ -504,6 +514,7 @@ def metric_card(label, value, help_text, subtext=None, tag_text=None, tag_bg=Non
         <div class="metric-card">
           <div class="metric-title">{safe_label}</div>
           <div class="metric-value">{safe_value}{suffix_html}</div>
+          {meta_html}
           {sub_html}
           <div class="metric-help" data-tooltip="{safe_help}">!</div>
         </div>
@@ -678,14 +689,16 @@ def reliability_factor(n, n0=30):
 
 def score_insight(df, score_col, value, tag_mode="generic"):
     if pd.isna(value):
-        return None, None, None, None
+        return None, None, None, None, None
     s = pd.to_numeric(df[score_col], errors="coerce").dropna()
     if s.empty:
-        return None, None, None, None
+        return None, None, None, None, None
     pct = (s <= value).sum() / len(s) * 100
     rank = int((s > value).sum() + 1)
     total = int(len(s))
     rank_text = f"{rank}/{total}"
+    pct_value = int(round(pct))
+    pct_text = f"相對位置 {pct_value}/100"
     thresholds = [90, 75, 60, 40, 25]
     if pct >= thresholds[0]:
         tier = 0
@@ -712,7 +725,7 @@ def score_insight(df, score_col, value, tag_mode="generic"):
     ]
     labels = acq_labels if tag_mode == "acq" else generic_labels
     bg, color = colors[tier]
-    return rank_text, labels[tier], bg, color
+    return rank_text, pct_text, labels[tier], bg, color
 
 def median_suffix(df, col, fmt):
     if col not in df.columns:
@@ -1509,7 +1522,7 @@ else:
         st.markdown("**戰力指標**")
         score_cols = st.columns(4)
         with score_cols[0]:
-            rank_txt, tag, bg, color = score_insight(designer_metrics_filtered, "overall_score", r.get("overall_score"))
+            rank_txt, pct_txt, tag, bg, color = score_insight(designer_metrics_filtered, "overall_score", r.get("overall_score"))
             metric_card(
                 "戰力指標(0-100)",
                 f"{r['overall_score']:.1f}" if pd.notna(r.get("overall_score")) else "-",
@@ -1519,9 +1532,10 @@ else:
                 tag_bg=bg,
                 tag_color=color,
                 value_suffix=rank_txt,
+                meta_text=pct_txt,
             )
         with score_cols[1]:
-            rank_txt, tag, bg, color = score_insight(designer_metrics_filtered, "basic_score_0100", r.get("basic_score_0100"))
+            rank_txt, pct_txt, tag, bg, color = score_insight(designer_metrics_filtered, "basic_score_0100", r.get("basic_score_0100"))
             metric_card(
                 "基本狀態",
                 f"{r['basic_score_0100']:.1f}" if pd.notna(r.get("basic_score_0100")) else "-",
@@ -1531,9 +1545,10 @@ else:
                 tag_bg=bg,
                 tag_color=color,
                 value_suffix=rank_txt,
+                meta_text=pct_txt,
             )
         with score_cols[2]:
-            rank_txt, tag, bg, color = score_insight(designer_metrics_filtered, "new_acq_score_0100", r.get("new_acq_score_0100"), tag_mode="acq")
+            rank_txt, pct_txt, tag, bg, color = score_insight(designer_metrics_filtered, "new_acq_score_0100", r.get("new_acq_score_0100"), tag_mode="acq")
             metric_card(
                 "新客獲取量",
                 f"{r['new_acq_score_0100']:.1f}" if pd.notna(r.get("new_acq_score_0100")) else "-",
@@ -1543,9 +1558,10 @@ else:
                 tag_bg=bg,
                 tag_color=color,
                 value_suffix=rank_txt,
+                meta_text=pct_txt,
             )
         with score_cols[3]:
-            rank_txt, tag, bg, color = score_insight(designer_metrics_filtered, "new_ret_score_0100", r.get("new_ret_score_0100"))
+            rank_txt, pct_txt, tag, bg, color = score_insight(designer_metrics_filtered, "new_ret_score_0100", r.get("new_ret_score_0100"))
             metric_card(
                 "新客留存力",
                 f"{r['new_ret_score_0100']:.1f}" if pd.notna(r.get("new_ret_score_0100")) else "-",
@@ -1555,10 +1571,11 @@ else:
                 tag_bg=bg,
                 tag_color=color,
                 value_suffix=rank_txt,
+                meta_text=pct_txt,
             )
         score_cols2 = st.columns(3)
         with score_cols2[0]:
-            rank_txt, tag, bg, color = score_insight(designer_metrics_filtered, "convert_score_0100", r.get("convert_score_0100"))
+            rank_txt, pct_txt, tag, bg, color = score_insight(designer_metrics_filtered, "convert_score_0100", r.get("convert_score_0100"))
             metric_card(
                 "熟客轉化力",
                 f"{r['convert_score_0100']:.1f}" if pd.notna(r.get("convert_score_0100")) else "-",
@@ -1568,9 +1585,10 @@ else:
                 tag_bg=bg,
                 tag_color=color,
                 value_suffix=rank_txt,
+                meta_text=pct_txt,
             )
         with score_cols2[1]:
-            rank_txt, tag, bg, color = score_insight(designer_metrics_filtered, "retain_score_0100", r.get("retain_score_0100"))
+            rank_txt, pct_txt, tag, bg, color = score_insight(designer_metrics_filtered, "retain_score_0100", r.get("retain_score_0100"))
             metric_card(
                 "熟客經營力",
                 f"{r['retain_score_0100']:.1f}" if pd.notna(r.get("retain_score_0100")) else "-",
@@ -1580,9 +1598,10 @@ else:
                 tag_bg=bg,
                 tag_color=color,
                 value_suffix=rank_txt,
+                meta_text=pct_txt,
             )
         with score_cols2[2]:
-            rank_txt, tag, bg, color = score_insight(designer_metrics_filtered, "stability_score_0100", r.get("stability_score_0100"))
+            rank_txt, pct_txt, tag, bg, color = score_insight(designer_metrics_filtered, "stability_score_0100", r.get("stability_score_0100"))
             metric_card(
                 "合作穩定度",
                 f"{r['stability_score_0100']:.1f}" if pd.notna(r.get("stability_score_0100")) else "-",
@@ -1592,6 +1611,7 @@ else:
                 tag_bg=bg,
                 tag_color=color,
                 value_suffix=rank_txt,
+                meta_text=pct_txt,
             )
         section_gap()
 
@@ -1855,10 +1875,10 @@ else:
         map_defs = [
             {
                 "name": "穩定性地圖",
-                "x": "stability_score_0100",
-                "y": "basic_score_0100",
-                "x_label": "合作穩定度差距(分數)",
-                "y_label": "基本狀態差距(分數)",
+                "x": "basic_score_0100",
+                "y": "stability_score_0100",
+                "x_label": "基本狀態差距(分數)",
+                "y_label": "合作穩定度差距(分數)",
                 "x_fmt": "number1",
                 "y_fmt": "number1",
             },
