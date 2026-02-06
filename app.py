@@ -1790,22 +1790,8 @@ else:
                 meta_text=None,
                 horizontal=True,
             )
-        row3 = st.columns(2)
+        row3 = st.columns(1)
         with row3[0]:
-            rank_txt, pct_value_text, tag, bg, color = score_insight(designer_metrics_filtered, "new_acq_goal_0100", r.get("new_acq_goal_0100"), tag_mode="acq")
-            metric_card(
-                "新客獲取量",
-                f"{r['new_acq_goal_0100']:.0f}分" if pd.notna(r.get("new_acq_goal_0100")) else "-",
-                "看近 3 個月「新客進來的量」：同時看新客占比與每天帶來的新客。數字越高，代表近期新客進來相對更多（偏結果量，不完全等於能力，會受排班/空窗影響）。",
-                subtext=pct_value_text if pct_value_text else "",
-                tag_text=tag,
-                tag_bg=bg,
-                tag_color=color,
-                value_suffix=None,
-                meta_text=None,
-                horizontal=True,
-            )
-        with row3[1]:
             rank_txt, pct_value_text, tag, bg, color = score_insight(designer_metrics_filtered, "new_ret_goal_0100", r.get("new_ret_goal_0100"))
             metric_card(
                 "新客留存力",
