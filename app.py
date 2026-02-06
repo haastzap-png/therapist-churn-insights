@@ -1837,6 +1837,11 @@ else:
         section_gap()
 
         st.markdown("**基本狀態**")
+        with st.expander("指標對應", expanded=False):
+            st.markdown("- 每月平均有單天數(近3月)")
+            st.markdown("- 近3月有單天數")
+            st.markdown("- 總單量(3M)")
+            st.markdown("- 空窗率(3M，越低越好)")
         c1, c2, c3, c4 = st.columns(4)
         with c1:
             metric_card(
@@ -1901,6 +1906,8 @@ else:
 
         section_gap()
         st.markdown("**新客留存力**")
+        with st.expander("指標對應", expanded=False):
+            st.markdown("- 新客留存率(60天)（= 1 − 新客流失率）")
         c1, c2, c3, c4 = st.columns(4)
         with c1:
             metric_card(
@@ -1963,6 +1970,9 @@ else:
 
         section_gap()
         st.markdown("**熟客轉化力（180 天內達 5 次）**")
+        with st.expander("指標對應", expanded=False):
+            st.markdown("- 熟客化率(180天達≥5次)")
+            st.markdown("- 平均達標天數（越低越好）")
         c1, c2, c3, c4 = st.columns(4)
         with c1:
             metric_card(
@@ -2017,6 +2027,9 @@ else:
 
         section_gap()
         st.markdown("**熟客經營力（後 180 天內 ≥3 次）**")
+        with st.expander("指標對應", expanded=False):
+            st.markdown("- 熟客維持率(後180天≥3次)")
+            st.markdown("- 熟客月均回訪次數(後180天)")
         c1, c2, c3, c4 = st.columns(4)
         with c1:
             metric_card(
@@ -2070,6 +2083,8 @@ else:
 
         section_gap()
         st.markdown("**業績穩定度**")
+        with st.expander("指標對應", expanded=False):
+            st.markdown("- 近6個月 CV（工時或有單天數）")
         c1, c2, c3, c4 = st.columns(4)
         if pd.notna(r.get("service_hours_cv_6m")):
             with c1:
