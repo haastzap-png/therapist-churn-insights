@@ -779,8 +779,8 @@ def score_insight(df, score_col, value, tag_mode="generic"):
     else:
         tier = 5
 
-    generic_labels = ["頂尖", "優秀", "平庸", "落後", "恥辱", "家恥"]
-    acq_labels = ["許多", "略多", "中等", "略少", "偏少", "極少"]
+    generic_labels = ["頂尖", "領先", "略高", "中等", "落後", "脫隊"]
+    acq_labels = ["最多", "許多", "略多", "中等", "偏少", "極少"]
     colors = [
         ("#e6f4ea", "#1b7f3b"),
         ("#e8f5e9", "#2ca02c"),
