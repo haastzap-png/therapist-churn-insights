@@ -165,9 +165,11 @@ div[data-testid="stMetric"] label {
   margin-bottom: 8px;
 }
 .metric-card.metric-horizontal {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1.2fr 1fr auto;
   align-items: center;
   gap: 12px;
+  min-height: 110px;
 }
 .metric-card.metric-horizontal .metric-title {
   margin-bottom: 0;
@@ -265,7 +267,7 @@ div[data-testid="stExpander"] {
 )
 
 st.title("顧客關係經營分析")
-st.markdown('<div class="section-note">圖表優先，表格放在最後。指標固定：出勤狀態、新客流失、熟客化、熟客維持、空窗率、合作穩定度。</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-note">圖表優先，表格放在最後。指標固定：出勤狀態、新客流失、熟客化、熟客維持、空窗率、業績穩定度。</div>', unsafe_allow_html=True)
 
 with st.sidebar:
     st.header("輸入")
@@ -284,7 +286,7 @@ with st.sidebar:
 st.write("""
 本工具會：
 - 以全品牌帳單歷史找出新客，並計算 60 天內是否回店（同分店）
-- 依分店/師傅呈現出勤狀態（每月平均有單天數、近 3 月有單月份數）、新客流失、熟客化與熟客維持、空窗率與合作穩定度
+- 依分店/師傅呈現出勤狀態（每月平均有單天數、近 3 月有單月份數）、新客流失、熟客化與熟客維持、空窗率與業績穩定度
 - 提供圖表與排行榜，快速看出差異
 熟客定義：同分店同師傅，180 天內消費 ≥5 次
 熟客維持：熟客達成後 180 天內回訪 ≥3 次
@@ -511,7 +513,7 @@ def metric_card(label, value, help_text, subtext=None, tag_text=None, tag_bg=Non
         meta_html = f'<div class="metric-meta">{safe_meta}</div>'
     safe_help = html.escape(str(help_text), quote=True)
     sub_html = ""
-    if subtext:
+    if subtext is not None:
         safe_sub = html.escape(str(subtext))
         tag_html = ""
         if tag_text:
@@ -1285,7 +1287,7 @@ if "項目" in merged_store.columns:
     )
     designer_metrics = designer_metrics.merge(vacancy_recent, on="設計師", how="left")
 
-# 合作穩定度（近 6 個月）
+# 業績穩定度（近 6 個月）
 stability_by_designer = None
 stability_df = merged_store.copy()
 stability_df["month"] = stability_df["結帳操作時間"].dt.to_period("M").astype(str)
@@ -1498,7 +1500,7 @@ with st.sidebar:
         )
         st.divider()
         target_stability_cv = st.number_input(
-            "合作穩定度目標(CV, 越低越好)",
+            "業績穩定度目標(CV, 越低越好)",
             min_value=0.0,
             max_value=float(stability_ceiling),
             value=float(round(default_target_stability_cv, 2)),
@@ -1672,7 +1674,7 @@ st.caption(f"回指率(30/60天)僅顯示樣本數 ≥ {int(min_repeat_base)}。
 metric_df = designer_metrics_filtered.copy()
 service_cv = metric_df["service_hours_cv_6m"] if "service_hours_cv_6m" in metric_df.columns else pd.Series(np.nan, index=metric_df.index)
 active_cv = metric_df["active_days_cv_6m"] if "active_days_cv_6m" in metric_df.columns else pd.Series(np.nan, index=metric_df.index)
-metric_df["合作穩定度(CV)"] = np.where(service_cv.notna(), service_cv, active_cv)
+metric_df["業績穩定度(CV)"] = np.where(service_cv.notna(), service_cv, active_cv)
 
 metric_options = {
     "戰力指標(0-100, 高越好)": ("overall_goal_0100", "number1", False),
@@ -1681,7 +1683,7 @@ metric_options = {
     "新客留存力(0-100, 高越好)": ("new_ret_goal_0100", "number1", False),
     "熟客轉化力(0-100, 高越好)": ("convert_goal_0100", "number1", False),
     "熟客經營力(0-100, 高越好)": ("retain_goal_0100", "number1", False),
-    "合作穩定度(0-100, 高越好)": ("stability_goal_0100", "number1", False),
+    "業績穩定度(0-100, 高越好)": ("stability_goal_0100", "number1", False),
     "新客留存率(60天，高越好)": ("new_retention_rate_3m", "percent", False),
     "新客流失率(60天，低越好)": ("new_churn_rate_3m", "percent", True),
     "新客數(3M,滿60天，高越好)": ("new_customers_3m", "number0", False),
@@ -1698,7 +1700,7 @@ metric_options = {
     "總單量(3M，高越好)": ("total_orders_3m", "number0", False),
     "指定率(3M，高越好)": ("request_rate_3m", "percent", False),
     "空窗率(3M，低越好)": ("vacancy_rate_3m", "percent", True),
-    "合作穩定度(CV，低越好)": ("合作穩定度(CV)", "number1", True),
+    "業績穩定度(CV，低越好)": ("業績穩定度(CV)", "number1", True),
     "每月平均有單天數(近3月，高越好)": ("avg_active_days_3m", "number1", False),
 }
 
@@ -1738,7 +1740,7 @@ else:
                 "戰力指標",
                 f"{r['overall_goal_0100']:.0f}分" if pd.notna(r.get("overall_goal_0100")) else "-",
                 "整體分數：把六項數值先各自換成同一把尺，再合在一起。數字越高，代表整體狀況越好、越有競爭力（用來跟同批人比較）。",
-                subtext=pct_value_text if pct_value_text else None,
+                subtext="",
                 tag_text=tag,
                 tag_bg=bg,
                 tag_color=color,
@@ -1752,7 +1754,7 @@ else:
                 "基本狀態",
                 f"{r['basic_goal_0100']:.0f}分" if pd.notna(r.get("basic_goal_0100")) else "-",
                 "看這位師傅最近是否「正常有在上班、接單、排班/客量是否穩定」：近 3 個月的有單天數、總單量、空窗率等組合。數字越高，代表近期更穩定。",
-                subtext=pct_value_text if pct_value_text else None,
+                subtext="",
                 tag_text=tag,
                 tag_bg=bg,
                 tag_color=color,
@@ -1766,7 +1768,7 @@ else:
                 "新客獲取量",
                 f"{r['new_acq_goal_0100']:.0f}分" if pd.notna(r.get("new_acq_goal_0100")) else "-",
                 "看近 3 個月「新客進來的量」：同時看新客占比與每天帶來的新客。數字越高，代表近期新客進來相對更多（偏結果量，不完全等於能力，會受排班/空窗影響）。",
-                subtext=pct_value_text if pct_value_text else None,
+                subtext="",
                 tag_text=tag,
                 tag_bg=bg,
                 tag_color=color,
@@ -1780,7 +1782,7 @@ else:
                 "新客留存力",
                 f"{r['new_ret_goal_0100']:.0f}分" if pd.notna(r.get("new_ret_goal_0100")) else "-",
                 "看「新客回不回來」：新客在 60 天內是否回到同分店的比例（留存率＝1−流失率）。數字越高，代表新客更容易在短期內回來。（注意：是同分店回店，不限定同師傅。）",
-                subtext=pct_value_text if pct_value_text else None,
+                subtext="",
                 tag_text=tag,
                 tag_bg=bg,
                 tag_color=color,
@@ -1795,7 +1797,7 @@ else:
                 "熟客轉化力",
                 f"{r['convert_goal_0100']:.0f}分" if pd.notna(r.get("convert_goal_0100")) else "-",
                 "看「把客人養成熟客的能力/速度」：同分店同師傅，180 天內是否能累積到 ≥5 次，以及平均多久達到第 5 次。數字越高，代表更容易、也更快把客人養成穩定熟客。",
-                subtext=pct_value_text if pct_value_text else None,
+                subtext="",
                 tag_text=tag,
                 tag_bg=bg,
                 tag_color=color,
@@ -1809,7 +1811,7 @@ else:
                 "熟客經營力",
                 f"{r['retain_goal_0100']:.0f}分" if pd.notna(r.get("retain_goal_0100")) else "-",
                 "看「熟客養成後能不能維持」：成為熟客後的下一個 180 天內，是否仍有 ≥3 次回訪，以及後 180 天的平均回訪頻率。數字越高，代表熟客更有黏著度、更常回來。",
-                subtext=pct_value_text if pct_value_text else None,
+                subtext="",
                 tag_text=tag,
                 tag_bg=bg,
                 tag_color=color,
@@ -1823,7 +1825,7 @@ else:
                 "業績穩定度",
                 f"{r['stability_goal_0100']:.0f}分" if pd.notna(r.get("stability_goal_0100")) else "-",
                 "看「工作量起伏大不大」：近 6 個月每月工時（或有單天數）的波動程度，越穩定分數越高。數字越高，代表月與月之間更穩定。",
-                subtext=pct_value_text if pct_value_text else None,
+                subtext="",
                 tag_text=tag,
                 tag_bg=bg,
                 tag_color=color,
@@ -2066,12 +2068,12 @@ else:
                     st.dataframe(deep_list[show_cols].sort_values("熟客達標日"), use_container_width=True)
 
         section_gap()
-        st.markdown("**合作穩定度**")
+        st.markdown("**業績穩定度**")
         c1, c2, c3, c4 = st.columns(4)
         if pd.notna(r.get("service_hours_cv_6m")):
             with c1:
                 metric_card(
-                    "合作穩定度(工時CV)",
+                    "業績穩定度(工時CV)",
                     f"{r['service_hours_cv_6m']:.2f}",
                     "近 6 個月服務時數的變異係數（CV），越低越穩定。",
                     value_suffix=median_suffix(designer_metrics_filtered, "service_hours_cv_6m", "number1"),
@@ -2079,13 +2081,13 @@ else:
         else:
             with c1:
                 metric_card(
-                    "合作穩定度(出勤CV)",
+                    "業績穩定度(出勤CV)",
                     f"{r['active_days_cv_6m']:.2f}" if pd.notna(r.get("active_days_cv_6m")) else "-",
                     "近 6 個月出勤天數的變異係數（CV），越低越穩定。",
                     value_suffix=median_suffix(designer_metrics_filtered, "active_days_cv_6m", "number1"),
                 )
 
-        st.caption("熟客化/熟客維持皆以「同分店、同師傅」計算；合作穩定度 CV 越低代表越穩定。")
+        st.caption("熟客化/熟客維持皆以「同分店、同師傅」計算；業績穩定度 CV 越低代表越穩定。")
 
         st.subheader("差距地圖（以選定師傅為中心）")
         st.caption("中心點為選定師傅 (0,0)；其餘點表示與他在 X/Y 指標上的差距。")
@@ -2096,7 +2098,7 @@ else:
                 "x": "basic_goal_0100",
                 "y": "stability_goal_0100",
                 "x_label": "基本狀態差距(分數)",
-                "y_label": "合作穩定度差距(分數)",
+                "y_label": "業績穩定度差距(分數)",
                 "x_fmt": "number1",
                 "y_fmt": "number1",
             },
@@ -2205,7 +2207,7 @@ else:
         else:
             trend_long = new_churn_trend.copy()
 
-        # 合作穩定度(工時CV)加入成長趨勢（Z-score）
+        # 業績穩定度(工時CV)加入成長趨勢（Z-score）
         cv_trend = None
         if vacancy_monthly is not None:
             cv_monthly = vacancy_monthly.copy()
@@ -2223,7 +2225,7 @@ else:
                 cv_trend = cv_monthly[["month_start", "cv_6m"]].dropna().rename(
                     columns={"month_start": "cohort_month", "cv_6m": "rate"}
                 )
-                cv_trend["指標"] = "合作穩定度(工時CV)"
+                cv_trend["指標"] = "業績穩定度(工時CV)"
 
         trend_for_z = trend_long.copy()
         if cv_trend is not None and not cv_trend.empty:
@@ -2309,7 +2311,7 @@ with col_good:
             designer_metrics_filtered.dropna(subset=["service_hours_cv_6m"]),
             "設計師",
             "service_hours_cv_6m",
-            "合作穩定度最佳(工時CV最低)",
+            "業績穩定度最佳(工時CV最低)",
             ascending=True,
             value_format="number1",
             color="#2ca02c",
@@ -2319,7 +2321,7 @@ with col_good:
             designer_metrics_filtered.dropna(subset=["active_days_cv_6m"]),
             "設計師",
             "active_days_cv_6m",
-            "合作穩定度最佳(出勤CV最低)",
+            "業績穩定度最佳(出勤CV最低)",
             ascending=True,
             value_format="number1",
             color="#2ca02c",
@@ -2381,7 +2383,7 @@ with col_watch:
             designer_metrics_filtered.dropna(subset=["service_hours_cv_6m"]),
             "設計師",
             "service_hours_cv_6m",
-            "合作穩定度較弱(工時CV最高)",
+            "業績穩定度較弱(工時CV最高)",
             ascending=False,
             value_format="number1",
             color="#d62728",
@@ -2391,7 +2393,7 @@ with col_watch:
             designer_metrics_filtered.dropna(subset=["active_days_cv_6m"]),
             "設計師",
             "active_days_cv_6m",
-            "合作穩定度較弱(出勤CV最高)",
+            "業績穩定度較弱(出勤CV最高)",
             ascending=False,
             value_format="number1",
             color="#d62728",
@@ -2442,7 +2444,7 @@ else:
     designer_table = designer_metrics_filtered.copy()
     service_cv = designer_table["service_hours_cv_6m"] if "service_hours_cv_6m" in designer_table.columns else pd.Series(np.nan, index=designer_table.index)
     active_cv = designer_table["active_days_cv_6m"] if "active_days_cv_6m" in designer_table.columns else pd.Series(np.nan, index=designer_table.index)
-    designer_table["合作穩定度(CV)"] = np.where(service_cv.notna(), service_cv, active_cv)
+    designer_table["業績穩定度(CV)"] = np.where(service_cv.notna(), service_cv, active_cv)
     designer_table = designer_table.rename(
         columns={
             "設計師": "師傅",
@@ -2452,7 +2454,7 @@ else:
             "new_ret_goal_0100": "新客留存力(0-100)",
             "convert_goal_0100": "熟客轉化力(0-100)",
             "retain_goal_0100": "熟客經營力(0-100)",
-            "stability_goal_0100": "合作穩定度(0-100)",
+            "stability_goal_0100": "業績穩定度(0-100)",
             "new_share_3m": "新客占比(新客/總單量)",
             "new_per_active_day_3m": "新客/有單天數(3M)",
             "new_customers_3m": "新客數(3M,滿60天)",
@@ -2495,7 +2497,7 @@ else:
         "新客留存力(0-100)",
         "熟客轉化力(0-100)",
         "熟客經營力(0-100)",
-        "合作穩定度(0-100)",
+        "業績穩定度(0-100)",
         "新客占比(新客/總單量)",
         "新客/有單天數(3M)",
         "新客數(3M,滿60天)",
@@ -2527,11 +2529,11 @@ else:
         "指定單數(3M)",
         "總單數(3M)",
         "空窗率(3M)",
-        "合作穩定度(CV)",
+        "業績穩定度(CV)",
     ]
     cols = [c for c in cols if c in designer_table.columns]
     st.dataframe(designer_table[cols].sort_values("新客流失率(60天)", ascending=True), use_container_width=True)
-    st.caption("合作穩定度：若缺少項目分鐘，將以出勤 CV 代替工時 CV。")
+    st.caption("業績穩定度：若缺少項目分鐘，將以出勤 CV 代替工時 CV。")
 
 # 分店彙總
 if has_store:
