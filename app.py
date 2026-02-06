@@ -164,6 +164,18 @@ div[data-testid="stMetric"] label {
   min-height: 96px;
   margin-bottom: 8px;
 }
+.metric-card.metric-horizontal {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.metric-card.metric-horizontal .metric-title {
+  margin-bottom: 0;
+  min-width: 150px;
+}
+.metric-card.metric-horizontal .metric-value {
+  font-size: 1.8rem;
+}
 .metric-title {
   font-size: 0.95rem;
   color: var(--muted);
@@ -486,7 +498,7 @@ def render_rank_bar(df, name_col, value_col, title, ascending, value_format, col
     height = max(260, 26 * len(chart_df) + 40)
     st.altair_chart((bars + labels).properties(height=height), use_container_width=True)
 
-def metric_card(label, value, help_text, subtext=None, tag_text=None, tag_bg=None, tag_color=None, value_suffix=None, meta_text=None):
+def metric_card(label, value, help_text, subtext=None, tag_text=None, tag_bg=None, tag_color=None, value_suffix=None, meta_text=None, horizontal=False):
     safe_label = html.escape(str(label))
     safe_value = html.escape(str(value))
     suffix_html = ""
@@ -509,9 +521,10 @@ def metric_card(label, value, help_text, subtext=None, tag_text=None, tag_bg=Non
                 style = f' style="background:{tag_bg or "#eee"};color:{tag_color or "#333"};"'
             tag_html = f'<span class="metric-tag"{style}>{safe_tag}</span>'
         sub_html = f'<div class="metric-sub">{safe_sub}{tag_html}</div>'
+    extra_cls = " metric-horizontal" if horizontal else ""
     st.markdown(
         f"""
-        <div class="metric-card">
+        <div class="metric-card{extra_cls}">
           <div class="metric-title">{safe_label}</div>
           <div class="metric-value">{safe_value}{suffix_html}</div>
           {meta_html}
@@ -1722,54 +1735,58 @@ else:
         with score_cols[0]:
             rank_txt, pct_value_text, tag, bg, color = score_insight(designer_metrics_filtered, "overall_goal_0100", r.get("overall_goal_0100"))
             metric_card(
-                "戰力指標(0-100)",
+                "戰力指標",
                 f"{r['overall_goal_0100']:.0f}分" if pd.notna(r.get("overall_goal_0100")) else "-",
-                f"整體分數：把六項數值先各自換成同一把尺，再合在一起。數字越高，代表整體狀況越好、越有競爭力（用來跟同批人比較）。｜名次/樣本：{rank_txt}",
-                subtext=None,
+                "整體分數：把六項數值先各自換成同一把尺，再合在一起。數字越高，代表整體狀況越好、越有競爭力（用來跟同批人比較）。",
+                subtext=pct_value_text if pct_value_text else None,
                 tag_text=tag,
                 tag_bg=bg,
                 tag_color=color,
-                value_suffix=f"相對位置 {pct_value_text}" if pct_value_text else None,
-                meta_text=f"名次/樣本 {rank_txt}" if rank_txt else None,
+                value_suffix=None,
+                meta_text=None,
+                horizontal=True,
             )
         with score_cols[1]:
             rank_txt, pct_value_text, tag, bg, color = score_insight(designer_metrics_filtered, "basic_goal_0100", r.get("basic_goal_0100"))
             metric_card(
                 "基本狀態",
                 f"{r['basic_goal_0100']:.0f}分" if pd.notna(r.get("basic_goal_0100")) else "-",
-                f"看這位師傅最近是否「正常有在上班、接單、排班/客量是否穩定」：近 3 個月的有單天數、總單量、空窗率等組合。數字越高，代表近期更穩定。｜名次/樣本：{rank_txt}",
-                subtext=None,
+                "看這位師傅最近是否「正常有在上班、接單、排班/客量是否穩定」：近 3 個月的有單天數、總單量、空窗率等組合。數字越高，代表近期更穩定。",
+                subtext=pct_value_text if pct_value_text else None,
                 tag_text=tag,
                 tag_bg=bg,
                 tag_color=color,
-                value_suffix=f"相對位置 {pct_value_text}" if pct_value_text else None,
-                meta_text=f"名次/樣本 {rank_txt}" if rank_txt else None,
+                value_suffix=None,
+                meta_text=None,
+                horizontal=True,
             )
         with score_cols[2]:
             rank_txt, pct_value_text, tag, bg, color = score_insight(designer_metrics_filtered, "new_acq_goal_0100", r.get("new_acq_goal_0100"), tag_mode="acq")
             metric_card(
                 "新客獲取量",
                 f"{r['new_acq_goal_0100']:.0f}分" if pd.notna(r.get("new_acq_goal_0100")) else "-",
-                f"看近 3 個月「新客進來的量」：同時看新客占比與每天帶來的新客。數字越高，代表近期新客進來相對更多（偏結果量，不完全等於能力，會受排班/空窗影響）。｜名次/樣本：{rank_txt}",
-                subtext=None,
+                "看近 3 個月「新客進來的量」：同時看新客占比與每天帶來的新客。數字越高，代表近期新客進來相對更多（偏結果量，不完全等於能力，會受排班/空窗影響）。",
+                subtext=pct_value_text if pct_value_text else None,
                 tag_text=tag,
                 tag_bg=bg,
                 tag_color=color,
-                value_suffix=f"相對位置 {pct_value_text}" if pct_value_text else None,
-                meta_text=f"名次/樣本 {rank_txt}" if rank_txt else None,
+                value_suffix=None,
+                meta_text=None,
+                horizontal=True,
             )
         with score_cols[3]:
             rank_txt, pct_value_text, tag, bg, color = score_insight(designer_metrics_filtered, "new_ret_goal_0100", r.get("new_ret_goal_0100"))
             metric_card(
                 "新客留存力",
                 f"{r['new_ret_goal_0100']:.0f}分" if pd.notna(r.get("new_ret_goal_0100")) else "-",
-                f"看「新客回不回來」：新客在 60 天內是否回到同分店的比例（留存率＝1−流失率）。數字越高，代表新客更容易在短期內回來。（注意：是同分店回店，不限定同師傅。）｜名次/樣本：{rank_txt}",
-                subtext=None,
+                "看「新客回不回來」：新客在 60 天內是否回到同分店的比例（留存率＝1−流失率）。數字越高，代表新客更容易在短期內回來。（注意：是同分店回店，不限定同師傅。）",
+                subtext=pct_value_text if pct_value_text else None,
                 tag_text=tag,
                 tag_bg=bg,
                 tag_color=color,
-                value_suffix=f"相對位置 {pct_value_text}" if pct_value_text else None,
-                meta_text=f"名次/樣本 {rank_txt}" if rank_txt else None,
+                value_suffix=None,
+                meta_text=None,
+                horizontal=True,
             )
         score_cols2 = st.columns(3)
         with score_cols2[0]:
@@ -1777,39 +1794,42 @@ else:
             metric_card(
                 "熟客轉化力",
                 f"{r['convert_goal_0100']:.0f}分" if pd.notna(r.get("convert_goal_0100")) else "-",
-                f"看「把客人養成熟客的能力/速度」：同分店同師傅，180 天內是否能累積到 ≥5 次，以及平均多久達到第 5 次。數字越高，代表更容易、也更快把客人養成穩定熟客。｜名次/樣本：{rank_txt}",
-                subtext=None,
+                "看「把客人養成熟客的能力/速度」：同分店同師傅，180 天內是否能累積到 ≥5 次，以及平均多久達到第 5 次。數字越高，代表更容易、也更快把客人養成穩定熟客。",
+                subtext=pct_value_text if pct_value_text else None,
                 tag_text=tag,
                 tag_bg=bg,
                 tag_color=color,
-                value_suffix=f"相對位置 {pct_value_text}" if pct_value_text else None,
-                meta_text=f"名次/樣本 {rank_txt}" if rank_txt else None,
+                value_suffix=None,
+                meta_text=None,
+                horizontal=True,
             )
         with score_cols2[1]:
             rank_txt, pct_value_text, tag, bg, color = score_insight(designer_metrics_filtered, "retain_goal_0100", r.get("retain_goal_0100"))
             metric_card(
                 "熟客經營力",
                 f"{r['retain_goal_0100']:.0f}分" if pd.notna(r.get("retain_goal_0100")) else "-",
-                f"看「熟客養成後能不能維持」：成為熟客後的下一個 180 天內，是否仍有 ≥3 次回訪，以及後 180 天的平均回訪頻率。數字越高，代表熟客更有黏著度、更常回來。｜名次/樣本：{rank_txt}",
-                subtext=None,
+                "看「熟客養成後能不能維持」：成為熟客後的下一個 180 天內，是否仍有 ≥3 次回訪，以及後 180 天的平均回訪頻率。數字越高，代表熟客更有黏著度、更常回來。",
+                subtext=pct_value_text if pct_value_text else None,
                 tag_text=tag,
                 tag_bg=bg,
                 tag_color=color,
-                value_suffix=f"相對位置 {pct_value_text}" if pct_value_text else None,
-                meta_text=f"名次/樣本 {rank_txt}" if rank_txt else None,
+                value_suffix=None,
+                meta_text=None,
+                horizontal=True,
             )
         with score_cols2[2]:
             rank_txt, pct_value_text, tag, bg, color = score_insight(designer_metrics_filtered, "stability_goal_0100", r.get("stability_goal_0100"))
             metric_card(
-                "合作穩定度",
+                "業績穩定度",
                 f"{r['stability_goal_0100']:.0f}分" if pd.notna(r.get("stability_goal_0100")) else "-",
-                f"看「工作量起伏大不大」：近 6 個月每月工時（或有單天數）的波動程度，越穩定分數越高。數字越高，代表月與月之間更穩定。｜名次/樣本：{rank_txt}",
-                subtext=None,
+                "看「工作量起伏大不大」：近 6 個月每月工時（或有單天數）的波動程度，越穩定分數越高。數字越高，代表月與月之間更穩定。",
+                subtext=pct_value_text if pct_value_text else None,
                 tag_text=tag,
                 tag_bg=bg,
                 tag_color=color,
-                value_suffix=f"相對位置 {pct_value_text}" if pct_value_text else None,
-                meta_text=f"名次/樣本 {rank_txt}" if rank_txt else None,
+                value_suffix=None,
+                meta_text=None,
+                horizontal=True,
             )
         section_gap()
 
