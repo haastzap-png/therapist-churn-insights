@@ -765,16 +765,16 @@ def score_insight(df, score_col, value, tag_mode="generic"):
     rank_text = f"{rank}/{total}"
     pct_value = int(round(pct))
     pct_value_text = f"{pct_value}/100"
-    score_thresholds = [90, 75, 60, 45, 30]
-    if value >= score_thresholds[0]:
+    pct_thresholds = [90, 75, 60, 40, 25]
+    if pct >= pct_thresholds[0]:
         tier = 0
-    elif value >= score_thresholds[1]:
+    elif pct >= pct_thresholds[1]:
         tier = 1
-    elif value >= score_thresholds[2]:
+    elif pct >= pct_thresholds[2]:
         tier = 2
-    elif value >= score_thresholds[3]:
+    elif pct >= pct_thresholds[3]:
         tier = 3
-    elif value >= score_thresholds[4]:
+    elif pct >= pct_thresholds[4]:
         tier = 4
     else:
         tier = 5
@@ -1754,7 +1754,7 @@ else:
                 "戰力指標",
                 f"{r['overall_goal_0100']:.0f}分" if pd.notna(r.get("overall_goal_0100")) else "-",
                 "整體分數：把六項數值先各自換成同一把尺，再合在一起。數字越高，代表整體狀況越好、越有競爭力（用來跟同批人比較）。",
-                subtext=f"相對 {pct_value_text}" if pct_value_text else "",
+                subtext=pct_value_text if pct_value_text else "",
                 tag_text=tag,
                 tag_bg=bg,
                 tag_color=color,
@@ -1769,7 +1769,7 @@ else:
                 "合作穩定度",
                 f"{r['basic_goal_0100']:.0f}分" if pd.notna(r.get("basic_goal_0100")) else "-",
                 "看這位師傅最近是否「正常有在上班、接單、排班/客量是否穩定」：近 3 個月的有單天數、總單量、空窗率等組合。數字越高，代表近期更穩定。",
-                subtext=f"相對 {pct_value_text}" if pct_value_text else "",
+                subtext=pct_value_text if pct_value_text else "",
                 tag_text=tag,
                 tag_bg=bg,
                 tag_color=color,
@@ -1783,7 +1783,7 @@ else:
                 "業績波動度",
                 f"{r['stability_goal_0100']:.0f}分" if pd.notna(r.get("stability_goal_0100")) else "-",
                 "看「工作量起伏大不大」：近 6 個月每月工時（或有單天數）的波動程度，越穩定分數越高。數字越高，代表月與月之間更穩定。",
-                subtext=f"相對 {pct_value_text}" if pct_value_text else "",
+                subtext=pct_value_text if pct_value_text else "",
                 tag_text=tag,
                 tag_bg=bg,
                 tag_color=color,
@@ -1798,7 +1798,7 @@ else:
                 "新客獲取量",
                 f"{r['new_acq_goal_0100']:.0f}分" if pd.notna(r.get("new_acq_goal_0100")) else "-",
                 "看近 3 個月「新客進來的量」：同時看新客占比與每天帶來的新客。數字越高，代表近期新客進來相對更多（偏結果量，不完全等於能力，會受排班/空窗影響）。",
-                subtext=f"相對 {pct_value_text}" if pct_value_text else "",
+                subtext=pct_value_text if pct_value_text else "",
                 tag_text=tag,
                 tag_bg=bg,
                 tag_color=color,
@@ -1812,7 +1812,7 @@ else:
                 "新客留存力",
                 f"{r['new_ret_goal_0100']:.0f}分" if pd.notna(r.get("new_ret_goal_0100")) else "-",
                 "看「新客回不回來」：新客在 60 天內是否回到同分店的比例（留存率＝1−流失率）。數字越高，代表新客更容易在短期內回來。（注意：是同分店回店，不限定同師傅。）",
-                subtext=f"相對 {pct_value_text}" if pct_value_text else "",
+                subtext=pct_value_text if pct_value_text else "",
                 tag_text=tag,
                 tag_bg=bg,
                 tag_color=color,
@@ -1827,7 +1827,7 @@ else:
                 "熟客轉化力",
                 f"{r['convert_goal_0100']:.0f}分" if pd.notna(r.get("convert_goal_0100")) else "-",
                 "看「把客人養成熟客的能力/速度」：同分店同師傅，180 天內是否能累積到 ≥5 次，以及平均多久達到第 5 次。數字越高，代表更容易、也更快把客人養成穩定熟客。",
-                subtext=f"相對 {pct_value_text}" if pct_value_text else "",
+                subtext=pct_value_text if pct_value_text else "",
                 tag_text=tag,
                 tag_bg=bg,
                 tag_color=color,
@@ -1841,7 +1841,7 @@ else:
                 "熟客經營力",
                 f"{r['retain_goal_0100']:.0f}分" if pd.notna(r.get("retain_goal_0100")) else "-",
                 "看「熟客養成後能不能維持」：成為熟客後的下一個 180 天內，是否仍有 ≥3 次回訪，以及後 180 天的平均回訪頻率。數字越高，代表熟客更有黏著度、更常回來。",
-                subtext=f"相對 {pct_value_text}" if pct_value_text else "",
+                subtext=pct_value_text if pct_value_text else "",
                 tag_text=tag,
                 tag_bg=bg,
                 tag_color=color,
