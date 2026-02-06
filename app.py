@@ -165,15 +165,15 @@ div[data-testid="stMetric"] label {
   margin-bottom: 8px;
 }
 .metric-card.metric-horizontal {
-  display: grid;
-  grid-template-columns: 1.2fr 1fr auto;
+  display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 12px;
   min-height: 110px;
 }
 .metric-card.metric-horizontal .metric-title {
   margin-bottom: 0;
-  min-width: 150px;
+  min-width: 140px;
 }
 .metric-card.metric-horizontal .metric-value {
   font-size: 1.8rem;
@@ -215,6 +215,11 @@ div[data-testid="stMetric"] label {
   font-size: 0.8rem;
   font-weight: 600;
   margin-left: 6px;
+  min-width: 56px;
+  text-align: center;
+  justify-content: center;
+  display: inline-flex;
+  align-items: center;
 }
 .metric-help {
   position: absolute;
@@ -529,6 +534,7 @@ def metric_card(label, value, help_text, subtext=None, tag_text=None, tag_bg=Non
         <div class="metric-card{extra_cls}">
           <div class="metric-title">{safe_label}</div>
           <div class="metric-value">{safe_value}{suffix_html}</div>
+          <div style="flex:1"></div>
           {meta_html}
           {sub_html}
           <div class="metric-help" data-tooltip="{safe_help}">!</div>
@@ -766,8 +772,8 @@ def score_insight(df, score_col, value, tag_mode="generic"):
     else:
         tier = 5
 
-    generic_labels = ["非常領先", "領先", "略高", "中段", "略低", "落後"]
-    acq_labels = ["新客非常多", "新客多", "新客偏多", "新客普通", "新客偏少", "新客很少"]
+    generic_labels = ["頂尖", "優秀", "平庸", "落後", "恥辱", "家恥"]
+    acq_labels = ["許多", "略多", "中等", "略少", "偏少", "極少"]
     colors = [
         ("#e6f4ea", "#1b7f3b"),
         ("#e8f5e9", "#2ca02c"),
