@@ -1414,23 +1414,22 @@ designer_metrics["overall_score"] = np.clip(50 + 10 * overall_z, 0, 100)
 # 目標達成分（0-100，達標=100；並依樣本數修正）
 goal_base = designer_metrics[designer_metrics["設計師"].isin(designer_filter)].copy()
 
-default_target_avg_active_days = quantile_default(goal_base, "avg_active_days_3m", 0.75, 15.0)
-default_target_active_days_3m = quantile_default(goal_base, "active_days_3m", 0.75, 45.0)
-default_target_total_orders_3m = quantile_default(goal_base, "total_orders_3m", 0.75, 150.0)
-default_target_vacancy_rate_3m = quantile_default(goal_base, "vacancy_rate_3m", 0.25, 0.62)
+default_target_avg_active_days = 16.5
+default_target_active_days_3m = 50.0
+default_target_total_orders_3m = 188.0
+default_target_vacancy_rate_3m = 0.25
 
-default_target_new_share_3m = quantile_default(goal_base, "new_share_3m", 0.75, 0.10)
-default_target_new_per_active_day_3m = quantile_default(goal_base, "new_per_active_day_3m", 0.75, 0.35)
-default_target_new_retention_rate_3m = quantile_default(goal_base, "new_retention_rate_3m", 0.75, 0.45)
+default_target_new_share_3m = 0.15
+default_target_new_per_active_day_3m = 0.35
+default_target_new_retention_rate_3m = 0.60
 
-default_target_regular_rate_180 = quantile_default(goal_base, "regular_rate_180", 0.75, 0.10)
-default_target_regular_days_avg_180 = quantile_default(goal_base, "regular_days_avg_180", 0.25, 120.0)
-default_target_retention_rate_180 = quantile_default(goal_base, "retention_rate_180", 0.75, 0.60)
-default_target_post_regular_visits_monthly_avg_180 = quantile_default(goal_base, "post_regular_visits_monthly_avg_180", 0.75, 1.0)
+default_target_regular_rate_180 = 0.18
+default_target_regular_days_avg_180 = 60.0
+default_target_retention_rate_180 = 0.80
+default_target_post_regular_visits_monthly_avg_180 = 1.50
 
-stability_ceiling = quantile_default(goal_base, "stability_cv", 0.90, 1.0)
-stability_ceiling = max(1.0, stability_ceiling)
-default_target_stability_cv = quantile_default(goal_base, "stability_cv", 0.25, 0.40)
+stability_ceiling = 1.0
+default_target_stability_cv = 0.45
 
 with st.sidebar:
     with st.expander("目標達成分設定（可選）", expanded=False):
