@@ -1552,7 +1552,8 @@ designer_metrics["stability_goal_0100"] = shrink_to_neutral(designer_metrics["st
 goal_blocks = designer_metrics[
     ["basic_goal_0100", "new_acq_goal_0100", "new_ret_goal_0100", "convert_goal_0100", "retain_goal_0100", "stability_goal_0100"]
 ]
-goal_weights = np.array([1/6, 1/6, 1/6, 1/6, 1/6, 1/6])
+# 將戰力指標權重調整：暫時不計入「新客獲取量」以避免偏差
+goal_weights = np.array([1/5, 1/5, 0, 1/5, 1/5, 1/5])
 goal_valid = goal_blocks.notna().values
 goal_weighted = goal_blocks.fillna(0).values * goal_weights
 goal_weight_sum = (goal_valid * goal_weights).sum(axis=1)
@@ -1752,7 +1753,7 @@ else:
         with row2[0]:
             rank_txt, pct_value_text, tag, bg, color = score_insight(designer_metrics_filtered, "basic_goal_0100", r.get("basic_goal_0100"))
             metric_card(
-                "基本狀態",
+                "合作穩定度",
                 f"{r['basic_goal_0100']:.0f}分" if pd.notna(r.get("basic_goal_0100")) else "-",
                 "看這位師傅最近是否「正常有在上班、接單、排班/客量是否穩定」：近 3 個月的有單天數、總單量、空窗率等組合。數字越高，代表近期更穩定。",
                 subtext="",
@@ -1766,7 +1767,7 @@ else:
         with row2[1]:
             rank_txt, pct_value_text, tag, bg, color = score_insight(designer_metrics_filtered, "stability_goal_0100", r.get("stability_goal_0100"))
             metric_card(
-                "業績穩定度",
+                "業績波動度",
                 f"{r['stability_goal_0100']:.0f}分" if pd.notna(r.get("stability_goal_0100")) else "-",
                 "看「工作量起伏大不大」：近 6 個月每月工時（或有單天數）的波動程度，越穩定分數越高。數字越高，代表月與月之間更穩定。",
                 subtext="",
