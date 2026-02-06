@@ -687,6 +687,44 @@ def reliability_factor(n, n0=30):
     n = pd.to_numeric(n, errors="coerce")
     return np.where((n > 0) & pd.notna(n), np.minimum(1, np.sqrt(n / n0)), np.nan)
 
+def quantile_default(df, col, q, fallback):
+    if col not in df.columns:
+        return fallback
+    s = pd.to_numeric(df[col], errors="coerce").dropna()
+    if s.empty:
+        return fallback
+    return float(s.quantile(q))
+
+def col_series(df, col):
+    if col in df.columns:
+        return df[col]
+    return pd.Series(np.nan, index=df.index)
+
+def goal_score_high(series, target, floor=0.0):
+    v = pd.to_numeric(series, errors="coerce").astype(float)
+    if pd.isna(target):
+        return pd.Series(np.nan, index=v.index)
+    denom = float(target) - float(floor)
+    if denom <= 0:
+        return pd.Series(np.nan, index=v.index)
+    score = (v - float(floor)) / denom * 100.0
+    return score.clip(lower=0, upper=100)
+
+def goal_score_low(series, target, ceiling=1.0):
+    v = pd.to_numeric(series, errors="coerce").astype(float)
+    if pd.isna(target):
+        return pd.Series(np.nan, index=v.index)
+    denom = float(ceiling) - float(target)
+    if denom <= 0:
+        return pd.Series(np.nan, index=v.index)
+    score = (float(ceiling) - v) / denom * 100.0
+    return score.clip(lower=0, upper=100)
+
+def shrink_to_neutral(score, rel, neutral=50.0):
+    s = pd.to_numeric(score, errors="coerce").astype(float)
+    r = pd.to_numeric(rel, errors="coerce").astype(float)
+    return neutral + (s - neutral) * r
+
 def score_insight(df, score_col, value, tag_mode="generic"):
     if pd.isna(value):
         return None, None, None, None, None
@@ -1345,6 +1383,166 @@ overall_z = np.where(weight_sum > 0, weighted.sum(axis=1) / weight_sum, np.nan)
 designer_metrics["overall_score_z"] = overall_z
 designer_metrics["overall_score"] = np.clip(50 + 10 * overall_z, 0, 100)
 
+# 目標達成分（0-100，達標=100；並依樣本數修正）
+goal_base = designer_metrics[designer_metrics["設計師"].isin(designer_filter)].copy()
+
+default_target_avg_active_days = quantile_default(goal_base, "avg_active_days_3m", 0.75, 15.0)
+default_target_active_days_3m = quantile_default(goal_base, "active_days_3m", 0.75, 45.0)
+default_target_total_orders_3m = quantile_default(goal_base, "total_orders_3m", 0.75, 150.0)
+default_target_vacancy_rate_3m = quantile_default(goal_base, "vacancy_rate_3m", 0.25, 0.62)
+
+default_target_new_share_3m = quantile_default(goal_base, "new_share_3m", 0.75, 0.10)
+default_target_new_per_active_day_3m = quantile_default(goal_base, "new_per_active_day_3m", 0.75, 0.35)
+default_target_new_retention_rate_3m = quantile_default(goal_base, "new_retention_rate_3m", 0.75, 0.45)
+
+default_target_regular_rate_180 = quantile_default(goal_base, "regular_rate_180", 0.75, 0.10)
+default_target_regular_days_avg_180 = quantile_default(goal_base, "regular_days_avg_180", 0.25, 120.0)
+default_target_retention_rate_180 = quantile_default(goal_base, "retention_rate_180", 0.75, 0.60)
+default_target_post_regular_visits_monthly_avg_180 = quantile_default(goal_base, "post_regular_visits_monthly_avg_180", 0.75, 1.0)
+
+stability_ceiling = quantile_default(goal_base, "stability_cv", 0.90, 1.0)
+stability_ceiling = max(1.0, stability_ceiling)
+default_target_stability_cv = quantile_default(goal_base, "stability_cv", 0.25, 0.40)
+
+with st.sidebar:
+    with st.expander("目標達成分設定（可選）", expanded=False):
+        st.caption("達標=100 分；未達標依比例扣分。低樣本會往 50 分收斂。")
+        target_avg_active_days = st.number_input(
+            "每月平均有單天數目標(近3月)",
+            min_value=0.0,
+            max_value=31.0,
+            value=float(round(default_target_avg_active_days, 1)),
+            step=0.5,
+        )
+        target_active_days_3m = st.number_input(
+            "近3月有單天數目標",
+            min_value=0.0,
+            max_value=93.0,
+            value=float(round(default_target_active_days_3m, 0)),
+            step=1.0,
+        )
+        target_total_orders_3m = st.number_input(
+            "總單量目標(3M)",
+            min_value=0.0,
+            value=float(round(default_target_total_orders_3m, 0)),
+            step=10.0,
+        )
+        target_vacancy_rate_3m_pct = st.slider(
+            "空窗率目標(3M, 越低越好)",
+            min_value=0.0,
+            max_value=100.0,
+            value=float(round(default_target_vacancy_rate_3m * 100, 1)),
+            step=0.5,
+        )
+        st.divider()
+        target_new_share_3m_pct = st.slider(
+            "新客占比目標(3M)",
+            min_value=0.0,
+            max_value=100.0,
+            value=float(round(default_target_new_share_3m * 100, 1)),
+            step=0.5,
+        )
+        target_new_per_active_day_3m = st.number_input(
+            "新客/有單天數目標(3M)",
+            min_value=0.0,
+            value=float(round(default_target_new_per_active_day_3m, 2)),
+            step=0.05,
+        )
+        target_new_retention_rate_3m_pct = st.slider(
+            "新客留存率目標(60天, 同分店)",
+            min_value=0.0,
+            max_value=100.0,
+            value=float(round(default_target_new_retention_rate_3m * 100, 1)),
+            step=0.5,
+        )
+        st.divider()
+        target_regular_rate_180_pct = st.slider(
+            "熟客化率目標(180天達≥5次)",
+            min_value=0.0,
+            max_value=100.0,
+            value=float(round(default_target_regular_rate_180 * 100, 1)),
+            step=0.5,
+        )
+        target_regular_days_avg_180 = st.number_input(
+            "平均達標天數目標(越低越好)",
+            min_value=1.0,
+            max_value=float(REGULAR_DAYS),
+            value=float(round(default_target_regular_days_avg_180, 0)),
+            step=5.0,
+        )
+        target_retention_rate_180_pct = st.slider(
+            "熟客維持率目標(後180天≥3次)",
+            min_value=0.0,
+            max_value=100.0,
+            value=float(round(default_target_retention_rate_180 * 100, 1)),
+            step=0.5,
+        )
+        target_post_regular_visits_monthly_avg_180 = st.number_input(
+            "熟客月均回訪次數目標(後180天)",
+            min_value=0.0,
+            value=float(round(default_target_post_regular_visits_monthly_avg_180, 2)),
+            step=0.1,
+        )
+        st.divider()
+        target_stability_cv = st.number_input(
+            "合作穩定度目標(CV, 越低越好)",
+            min_value=0.0,
+            max_value=float(stability_ceiling),
+            value=float(round(default_target_stability_cv, 2)),
+            step=0.05,
+        )
+
+target_vacancy_rate_3m = float(target_vacancy_rate_3m_pct) / 100.0
+target_new_share_3m = float(target_new_share_3m_pct) / 100.0
+target_new_retention_rate_3m = float(target_new_retention_rate_3m_pct) / 100.0
+target_regular_rate_180 = float(target_regular_rate_180_pct) / 100.0
+target_retention_rate_180 = float(target_retention_rate_180_pct) / 100.0
+
+basic_goal_components = pd.DataFrame({
+    "g_avg_active_days": goal_score_high(col_series(designer_metrics, "avg_active_days_3m"), target_avg_active_days, floor=0.0),
+    "g_active_days_3m": goal_score_high(col_series(designer_metrics, "active_days_3m"), target_active_days_3m, floor=0.0),
+    "g_total_orders": goal_score_high(col_series(designer_metrics, "total_orders_3m"), target_total_orders_3m, floor=0.0),
+    "g_vacancy": goal_score_low(col_series(designer_metrics, "vacancy_rate_3m"), target_vacancy_rate_3m, ceiling=1.0),
+})
+designer_metrics["basic_goal_raw"] = basic_goal_components.mean(axis=1, skipna=True)
+designer_metrics["basic_goal_0100"] = shrink_to_neutral(designer_metrics["basic_goal_raw"], designer_metrics.get("basic_rel"))
+
+new_acq_goal_components = pd.DataFrame({
+    "g_new_share": goal_score_high(col_series(designer_metrics, "new_share_3m"), target_new_share_3m, floor=0.0),
+    "g_new_per_day": goal_score_high(col_series(designer_metrics, "new_per_active_day_3m"), target_new_per_active_day_3m, floor=0.0),
+})
+designer_metrics["new_acq_goal_raw"] = new_acq_goal_components.mean(axis=1, skipna=True)
+designer_metrics["new_acq_goal_0100"] = shrink_to_neutral(designer_metrics["new_acq_goal_raw"], designer_metrics.get("new_acq_rel"))
+
+designer_metrics["new_ret_goal_raw"] = goal_score_high(col_series(designer_metrics, "new_retention_rate_3m"), target_new_retention_rate_3m, floor=0.0)
+designer_metrics["new_ret_goal_0100"] = shrink_to_neutral(designer_metrics["new_ret_goal_raw"], designer_metrics.get("new_ret_rel"))
+
+convert_goal_components = pd.DataFrame({
+    "g_regular_rate": goal_score_high(col_series(designer_metrics, "regular_rate_180"), target_regular_rate_180, floor=0.0),
+    "g_regular_days": goal_score_low(col_series(designer_metrics, "regular_days_avg_180"), target_regular_days_avg_180, ceiling=float(REGULAR_DAYS)),
+})
+designer_metrics["convert_goal_raw"] = convert_goal_components.mean(axis=1, skipna=True)
+designer_metrics["convert_goal_0100"] = shrink_to_neutral(designer_metrics["convert_goal_raw"], designer_metrics.get("convert_rel"))
+
+retain_goal_components = pd.DataFrame({
+    "g_retention_rate": goal_score_high(col_series(designer_metrics, "retention_rate_180"), target_retention_rate_180, floor=0.0),
+    "g_post_visits": goal_score_high(col_series(designer_metrics, "post_regular_visits_monthly_avg_180"), target_post_regular_visits_monthly_avg_180, floor=0.0),
+})
+designer_metrics["retain_goal_raw"] = retain_goal_components.mean(axis=1, skipna=True)
+designer_metrics["retain_goal_0100"] = shrink_to_neutral(designer_metrics["retain_goal_raw"], designer_metrics.get("retain_rel"))
+
+designer_metrics["stability_goal_raw"] = goal_score_low(col_series(designer_metrics, "stability_cv"), target_stability_cv, ceiling=float(stability_ceiling))
+designer_metrics["stability_goal_0100"] = shrink_to_neutral(designer_metrics["stability_goal_raw"], designer_metrics.get("stability_rel"))
+
+goal_blocks = designer_metrics[
+    ["basic_goal_0100", "new_acq_goal_0100", "new_ret_goal_0100", "convert_goal_0100", "retain_goal_0100", "stability_goal_0100"]
+]
+goal_weights = np.array([1/6, 1/6, 1/6, 1/6, 1/6, 1/6])
+goal_valid = goal_blocks.notna().values
+goal_weighted = goal_blocks.fillna(0).values * goal_weights
+goal_weight_sum = (goal_valid * goal_weights).sum(axis=1)
+designer_metrics["overall_goal_0100"] = np.where(goal_weight_sum > 0, goal_weighted.sum(axis=1) / goal_weight_sum, np.nan)
+
 designer_metrics_filtered = designer_metrics[designer_metrics["設計師"].isin(designer_filter)].copy()
 
 overall = {
@@ -1464,13 +1662,13 @@ active_cv = metric_df["active_days_cv_6m"] if "active_days_cv_6m" in metric_df.c
 metric_df["合作穩定度(CV)"] = np.where(service_cv.notna(), service_cv, active_cv)
 
 metric_options = {
-    "戰力指標(0-100, 高越好)": ("overall_score", "number1", False),
-    "基本狀態(0-100, 高越好)": ("basic_score_0100", "number1", False),
-    "新客獲取量(0-100, 高越好)": ("new_acq_score_0100", "number1", False),
-    "新客留存力(0-100, 高越好)": ("new_ret_score_0100", "number1", False),
-    "熟客轉化力(0-100, 高越好)": ("convert_score_0100", "number1", False),
-    "熟客經營力(0-100, 高越好)": ("retain_score_0100", "number1", False),
-    "合作穩定度(0-100, 高越好)": ("stability_score_0100", "number1", False),
+    "戰力指標(0-100, 高越好)": ("overall_goal_0100", "number1", False),
+    "基本狀態(0-100, 高越好)": ("basic_goal_0100", "number1", False),
+    "新客獲取量(0-100, 高越好)": ("new_acq_goal_0100", "number1", False),
+    "新客留存力(0-100, 高越好)": ("new_ret_goal_0100", "number1", False),
+    "熟客轉化力(0-100, 高越好)": ("convert_goal_0100", "number1", False),
+    "熟客經營力(0-100, 高越好)": ("retain_goal_0100", "number1", False),
+    "合作穩定度(0-100, 高越好)": ("stability_goal_0100", "number1", False),
     "新客留存率(60天，高越好)": ("new_retention_rate_3m", "percent", False),
     "新客流失率(60天，低越好)": ("new_churn_rate_3m", "percent", True),
     "新客數(3M,滿60天，高越好)": ("new_customers_3m", "number0", False),
@@ -1522,96 +1720,96 @@ else:
         st.markdown("**戰力指標**")
         score_cols = st.columns(4)
         with score_cols[0]:
-            rank_txt, pct_value_text, tag, bg, color = score_insight(designer_metrics_filtered, "overall_score", r.get("overall_score"))
+            rank_txt, pct_value_text, tag, bg, color = score_insight(designer_metrics_filtered, "overall_goal_0100", r.get("overall_goal_0100"))
             metric_card(
                 "戰力指標(0-100)",
-                pct_value_text if pct_value_text else "-",
-                "六大區塊（基本、新客獲取量、新客留存、熟客轉化、熟客經營、合作穩定度）等權合成；各指標先做 Z-score 標準化，再依樣本數修正。",
+                f"{r['overall_goal_0100']:.0f}/100" if pd.notna(r.get("overall_goal_0100")) else "-",
+                "六大區塊等權合成；每區塊先依『目標值』換算成 0–100（達標=100），再依樣本數修正。",
                 subtext="整體分數：把六項數值先各自換成同一把尺，再合在一起。數字越高，代表整體狀況越好、越有競爭力（用來跟同批人比較）。",
                 tag_text=tag,
                 tag_bg=bg,
                 tag_color=color,
                 value_suffix=rank_txt,
-                meta_text=f"分數 {r['overall_score']:.1f}" if pd.notna(r.get("overall_score")) else None,
+                meta_text=f"相對位置 {pct_value_text}" if pct_value_text else None,
             )
         with score_cols[1]:
-            rank_txt, pct_value_text, tag, bg, color = score_insight(designer_metrics_filtered, "basic_score_0100", r.get("basic_score_0100"))
+            rank_txt, pct_value_text, tag, bg, color = score_insight(designer_metrics_filtered, "basic_goal_0100", r.get("basic_goal_0100"))
             metric_card(
                 "基本狀態",
-                pct_value_text if pct_value_text else "-",
-                "每月平均有單天數、近3月有單天數、總單量、空窗率（反向）之 Z-score 平均，並依樣本數修正。",
+                f"{r['basic_goal_0100']:.0f}/100" if pd.notna(r.get("basic_goal_0100")) else "-",
+                "每月平均有單天數、近3月有單天數、總單量、空窗率（反向）依目標換算成 0–100 後平均，並依樣本數修正。",
                 subtext="看這位師傅最近是否「正常有在上班、接單、排班/客量是否穩定」：近 3 個月的有單天數、總單量、空窗率等組合。數字越高，代表近期更穩定。",
                 tag_text=tag,
                 tag_bg=bg,
                 tag_color=color,
                 value_suffix=rank_txt,
-                meta_text=f"分數 {r['basic_score_0100']:.1f}" if pd.notna(r.get("basic_score_0100")) else None,
+                meta_text=f"相對位置 {pct_value_text}" if pct_value_text else None,
             )
         with score_cols[2]:
-            rank_txt, pct_value_text, tag, bg, color = score_insight(designer_metrics_filtered, "new_acq_score_0100", r.get("new_acq_score_0100"), tag_mode="acq")
+            rank_txt, pct_value_text, tag, bg, color = score_insight(designer_metrics_filtered, "new_acq_goal_0100", r.get("new_acq_goal_0100"), tag_mode="acq")
             metric_card(
                 "新客獲取量",
-                pct_value_text if pct_value_text else "-",
-                "新客占比（新客數/總單量）與新客/有單天數的 Z-score 平均，並依樣本數修正。",
+                f"{r['new_acq_goal_0100']:.0f}/100" if pd.notna(r.get("new_acq_goal_0100")) else "-",
+                "新客占比與新客/有單天數依目標換算成 0–100 後平均，並依樣本數修正。",
                 subtext="看近 3 個月「新客進來的量」：同時看新客占比與每天帶來的新客。數字越高，代表近期新客進來相對更多（偏結果量，不完全等於能力，會受排班/空窗影響）。",
                 tag_text=tag,
                 tag_bg=bg,
                 tag_color=color,
                 value_suffix=rank_txt,
-                meta_text=f"分數 {r['new_acq_score_0100']:.1f}" if pd.notna(r.get("new_acq_score_0100")) else None,
+                meta_text=f"相對位置 {pct_value_text}" if pct_value_text else None,
             )
         with score_cols[3]:
-            rank_txt, pct_value_text, tag, bg, color = score_insight(designer_metrics_filtered, "new_ret_score_0100", r.get("new_ret_score_0100"))
+            rank_txt, pct_value_text, tag, bg, color = score_insight(designer_metrics_filtered, "new_ret_goal_0100", r.get("new_ret_goal_0100"))
             metric_card(
                 "新客留存力",
-                pct_value_text if pct_value_text else "-",
-                "新客留存率（= 1 - 流失率）的 Z-score，並依樣本數修正。",
+                f"{r['new_ret_goal_0100']:.0f}/100" if pd.notna(r.get("new_ret_goal_0100")) else "-",
+                "新客留存率（= 1 - 流失率）依目標換算成 0–100，並依樣本數修正。",
                 subtext="看「新客回不回來」：新客在 60 天內是否回到同分店的比例（留存率＝1−流失率）。數字越高，代表新客更容易在短期內回來。（注意：是同分店回店，不限定同師傅。）",
                 tag_text=tag,
                 tag_bg=bg,
                 tag_color=color,
                 value_suffix=rank_txt,
-                meta_text=f"分數 {r['new_ret_score_0100']:.1f}" if pd.notna(r.get("new_ret_score_0100")) else None,
+                meta_text=f"相對位置 {pct_value_text}" if pct_value_text else None,
             )
         score_cols2 = st.columns(3)
         with score_cols2[0]:
-            rank_txt, pct_value_text, tag, bg, color = score_insight(designer_metrics_filtered, "convert_score_0100", r.get("convert_score_0100"))
+            rank_txt, pct_value_text, tag, bg, color = score_insight(designer_metrics_filtered, "convert_goal_0100", r.get("convert_goal_0100"))
             metric_card(
                 "熟客轉化力",
-                pct_value_text if pct_value_text else "-",
-                "熟客化率與平均達標天數（反向）的 Z-score 平均，並依樣本數修正。",
+                f"{r['convert_goal_0100']:.0f}/100" if pd.notna(r.get("convert_goal_0100")) else "-",
+                "熟客化率與平均達標天數（反向）依目標換算成 0–100 後平均，並依樣本數修正。",
                 subtext="看「把客人養成熟客的能力/速度」：同分店同師傅，180 天內是否能累積到 ≥5 次，以及平均多久達到第 5 次。數字越高，代表更容易、也更快把客人養成穩定熟客。",
                 tag_text=tag,
                 tag_bg=bg,
                 tag_color=color,
                 value_suffix=rank_txt,
-                meta_text=f"分數 {r['convert_score_0100']:.1f}" if pd.notna(r.get("convert_score_0100")) else None,
+                meta_text=f"相對位置 {pct_value_text}" if pct_value_text else None,
             )
         with score_cols2[1]:
-            rank_txt, pct_value_text, tag, bg, color = score_insight(designer_metrics_filtered, "retain_score_0100", r.get("retain_score_0100"))
+            rank_txt, pct_value_text, tag, bg, color = score_insight(designer_metrics_filtered, "retain_goal_0100", r.get("retain_goal_0100"))
             metric_card(
                 "熟客經營力",
-                pct_value_text if pct_value_text else "-",
-                "熟客維持率與後180天平均回訪次數的 Z-score 平均，並依樣本數修正。",
+                f"{r['retain_goal_0100']:.0f}/100" if pd.notna(r.get("retain_goal_0100")) else "-",
+                "熟客維持率與熟客月均回訪次數依目標換算成 0–100 後平均，並依樣本數修正。",
                 subtext="看「熟客養成後能不能維持」：成為熟客後的下一個 180 天內，是否仍有 ≥3 次回訪，以及後 180 天的平均回訪頻率。數字越高，代表熟客更有黏著度、更常回來。",
                 tag_text=tag,
                 tag_bg=bg,
                 tag_color=color,
                 value_suffix=rank_txt,
-                meta_text=f"分數 {r['retain_score_0100']:.1f}" if pd.notna(r.get("retain_score_0100")) else None,
+                meta_text=f"相對位置 {pct_value_text}" if pct_value_text else None,
             )
         with score_cols2[2]:
-            rank_txt, pct_value_text, tag, bg, color = score_insight(designer_metrics_filtered, "stability_score_0100", r.get("stability_score_0100"))
+            rank_txt, pct_value_text, tag, bg, color = score_insight(designer_metrics_filtered, "stability_goal_0100", r.get("stability_goal_0100"))
             metric_card(
                 "合作穩定度",
-                pct_value_text if pct_value_text else "-",
-                "近 6 個月工時 CV（或出勤 CV）之 Z-score（反向），並依樣本月數修正。",
+                f"{r['stability_goal_0100']:.0f}/100" if pd.notna(r.get("stability_goal_0100")) else "-",
+                "近 6 個月 CV（越低越好）依目標換算成 0–100，並依樣本月數修正。",
                 subtext="看「工作量起伏大不大」：近 6 個月每月工時（或有單天數）的波動程度，越穩定分數越高。數字越高，代表月與月之間更穩定。",
                 tag_text=tag,
                 tag_bg=bg,
                 tag_color=color,
                 value_suffix=rank_txt,
-                meta_text=f"分數 {r['stability_score_0100']:.1f}" if pd.notna(r.get("stability_score_0100")) else None,
+                meta_text=f"相對位置 {pct_value_text}" if pct_value_text else None,
             )
         section_gap()
 
@@ -1875,8 +2073,8 @@ else:
         map_defs = [
             {
                 "name": "穩定性地圖",
-                "x": "basic_score_0100",
-                "y": "stability_score_0100",
+                "x": "basic_goal_0100",
+                "y": "stability_goal_0100",
                 "x_label": "基本狀態差距(分數)",
                 "y_label": "合作穩定度差距(分數)",
                 "x_fmt": "number1",
@@ -2228,13 +2426,13 @@ else:
     designer_table = designer_table.rename(
         columns={
             "設計師": "師傅",
-            "overall_score": "戰力指標(0-100)",
-            "basic_score_0100": "基本狀態(0-100)",
-            "new_acq_score_0100": "新客獲取量(0-100)",
-            "new_ret_score_0100": "新客留存力(0-100)",
-            "convert_score_0100": "熟客轉化力(0-100)",
-            "retain_score_0100": "熟客經營力(0-100)",
-            "stability_score_0100": "合作穩定度(0-100)",
+            "overall_goal_0100": "戰力指標(0-100)",
+            "basic_goal_0100": "基本狀態(0-100)",
+            "new_acq_goal_0100": "新客獲取量(0-100)",
+            "new_ret_goal_0100": "新客留存力(0-100)",
+            "convert_goal_0100": "熟客轉化力(0-100)",
+            "retain_goal_0100": "熟客經營力(0-100)",
+            "stability_goal_0100": "合作穩定度(0-100)",
             "new_share_3m": "新客占比(新客/總單量)",
             "new_per_active_day_3m": "新客/有單天數(3M)",
             "new_customers_3m": "新客數(3M,滿60天)",
