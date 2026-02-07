@@ -270,9 +270,26 @@ div[data-testid="stMetric"] label {
 .section-gap {
   height: 18px;
 }
-div[data-testid="stExpander"] {
-  margin-top: 2px;
-  margin-bottom: 2px;
+div[data-testid="stAppViewContainer"] section.main div[data-testid="stExpander"] {
+  margin-top: -6px;
+  margin-bottom: 12px;
+}
+div[data-testid="stAppViewContainer"] section.main div[data-testid="stExpander"] details {
+  border: 1px solid var(--line);
+  border-top: 0;
+  border-radius: 0 0 16px 16px;
+  background: #fcfbf8;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+div[data-testid="stAppViewContainer"] section.main div[data-testid="stExpander"] details > summary {
+  padding: 8px 12px;
+  font-size: 0.92rem;
+  color: var(--muted);
+}
+div[data-testid="stAppViewContainer"] section.main div[data-testid="stExpander"] details[open] > summary {
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
 }
 </style>
 """,
