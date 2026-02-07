@@ -1256,6 +1256,12 @@ if not relationship_first.empty:
         if col not in designer_metrics.columns:
             designer_metrics[col] = np.nan
 
+# 經營中熟客：已達熟客(180天達5次)但後180天維持觀察期尚未滿
+designer_metrics["in_service_regular_180"] = (
+    pd.to_numeric(designer_metrics["regular_achieved_180"], errors="coerce")
+    - pd.to_numeric(designer_metrics["retention_base_180"], errors="coerce")
+).clip(lower=0)
+
 # 指定率（近 3 個月）
 if "is_requested" in merged_store.columns and merged_store["is_requested"].notna().any():
     request_recent = merged_store[merged_store["結帳操作時間"] >= start_ts_3m].copy()
@@ -1960,6 +1966,14 @@ else:
                             f"{r['regular_days_avg_180']:.0f}" if pd.notna(r.get("regular_days_avg_180")) else "-",
                             "達成第 5 次消費的平均天數。",
                             value_suffix=median_suffix(designer_metrics_filtered, "regular_days_avg_180", "number0"),
+                        )
+                    d1, _, _, _ = st.columns(4)
+                    with d1:
+                        metric_card(
+                            "經營中熟客",
+                            f"{int(r['in_service_regular_180'])}" if pd.notna(r.get("in_service_regular_180")) else "-",
+                            "已達熟客（180天達5次），但後180天觀察期尚未滿的人數。",
+                            value_suffix=median_suffix(designer_metrics_filtered, "in_service_regular_180", "number0"),
                         )
 
                     if not rel_all.empty:
