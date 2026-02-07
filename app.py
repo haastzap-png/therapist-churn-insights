@@ -1835,273 +1835,231 @@ else:
                 horizontal=True,
             )
         section_gap()
+        with st.expander("查看戰力指標構成（點開看細項）", expanded=False):
+            cc1, cc2, cc3 = st.columns(3)
+            with cc1:
+                metric_card("新客留存力", f"{r['new_ret_goal_0100']:.0f}分" if pd.notna(r.get("new_ret_goal_0100")) else "-", "戰力指標子分數。")
+                metric_card("合作穩定度", f"{r['basic_goal_0100']:.0f}分" if pd.notna(r.get("basic_goal_0100")) else "-", "戰力指標子分數。")
+            with cc2:
+                metric_card("熟客轉化力", f"{r['convert_goal_0100']:.0f}分" if pd.notna(r.get("convert_goal_0100")) else "-", "戰力指標子分數。")
+                metric_card("業績波動度", f"{r['stability_goal_0100']:.0f}分" if pd.notna(r.get("stability_goal_0100")) else "-", "戰力指標子分數。")
+            with cc3:
+                metric_card("熟客經營力", f"{r['retain_goal_0100']:.0f}分" if pd.notna(r.get("retain_goal_0100")) else "-", "戰力指標子分數。")
 
-        st.markdown("**基本狀態**")
-        with st.expander("指標對應", expanded=False):
-            st.markdown("- 每月平均有單天數(近3月)")
-            st.markdown("- 近3月有單天數")
-            st.markdown("- 總單量(3M)")
-            st.markdown("- 空窗率(3M，越低越好)")
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            metric_card(
-                "每月平均有單天數(近3月)",
-                f"{r['avg_active_days_3m']:.1f}" if pd.notna(r.get("avg_active_days_3m")) else "-",
-                "近 3 個月每月平均有單的天數。",
-                value_suffix=median_suffix(designer_metrics_filtered, "avg_active_days_3m", "number1"),
-            )
-        with c2:
-            metric_card(
-                "近3月有單天數",
-                f"{int(r['active_days_3m'])}" if pd.notna(r.get("active_days_3m")) else "-",
-                "近 3 個月內所有有單天數的加總。",
-                value_suffix=median_suffix(designer_metrics_filtered, "active_days_3m", "number0"),
-            )
-        with c3:
-            metric_card(
-                "總單量(3M)",
-                f"{int(r['total_orders_3m'])}" if pd.notna(r.get("total_orders_3m")) else "-",
-                "近 3 個月的訂單總數。",
-                value_suffix=median_suffix(designer_metrics_filtered, "total_orders_3m", "number0"),
-            )
-        with c4:
-            metric_card(
-                "空窗率(3M)",
-                f"{r['vacancy_rate_3m']:.2%}" if pd.notna(r.get("vacancy_rate_3m")) else "-",
-                "近 3 個月平均空窗率（1 - 服務時數/168 小時）。",
-                value_suffix=median_suffix(designer_metrics_filtered, "vacancy_rate_3m", "percent"),
-            )
+        with st.expander("查看合作穩定度構成（點開看細項）", expanded=False):
+            c1, c2, c3, c4 = st.columns(4)
+            with c1:
+                metric_card(
+                    "每月平均有單天數(近3月)",
+                    f"{r['avg_active_days_3m']:.1f}" if pd.notna(r.get("avg_active_days_3m")) else "-",
+                    "近 3 個月每月平均有單的天數。",
+                    value_suffix=median_suffix(designer_metrics_filtered, "avg_active_days_3m", "number1"),
+                )
+            with c2:
+                metric_card(
+                    "近3月有單天數",
+                    f"{int(r['active_days_3m'])}" if pd.notna(r.get("active_days_3m")) else "-",
+                    "近 3 個月內所有有單天數的加總。",
+                    value_suffix=median_suffix(designer_metrics_filtered, "active_days_3m", "number0"),
+                )
+            with c3:
+                metric_card(
+                    "總單量(3M)",
+                    f"{int(r['total_orders_3m'])}" if pd.notna(r.get("total_orders_3m")) else "-",
+                    "近 3 個月的訂單總數。",
+                    value_suffix=median_suffix(designer_metrics_filtered, "total_orders_3m", "number0"),
+                )
+            with c4:
+                metric_card(
+                    "空窗率(3M)",
+                    f"{r['vacancy_rate_3m']:.2%}" if pd.notna(r.get("vacancy_rate_3m")) else "-",
+                    "近 3 個月平均空窗率（1 - 服務時數/168 小時）。",
+                    value_suffix=median_suffix(designer_metrics_filtered, "vacancy_rate_3m", "percent"),
+                )
 
-        section_gap()
-        st.markdown("**新客獲取量**")
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            metric_card(
-                "新客占比(新客/總單量)",
-                f"{r['new_share_3m']:.2%}" if pd.notna(r.get("new_share_3m")) else "-",
-                "近 3 個月新客數 / 總單量的比例。",
-                value_suffix=median_suffix(designer_metrics_filtered, "new_share_3m", "percent"),
-            )
-        with c2:
-            metric_card(
-                "新客/有單天數(3M)",
-                f"{r['new_per_active_day_3m']:.2f}" if pd.notna(r.get("new_per_active_day_3m")) else "-",
-                "近 3 個月新客數 / 有單天數。",
-                value_suffix=median_suffix(designer_metrics_filtered, "new_per_active_day_3m", "number1"),
-            )
-        with c3:
-            metric_card(
-                "新客數(3M,滿60天)",
-                f"{int(r['new_customers_3m'])}" if pd.notna(r.get("new_customers_3m")) else "-",
-                "近 3 個月新客中已滿 60 天者。",
-                value_suffix=median_suffix(designer_metrics_filtered, "new_customers_3m", "number0"),
-            )
-        with c4:
-            metric_card(
-                "總單量(3M)",
-                f"{int(r['total_orders_3m'])}" if pd.notna(r.get("total_orders_3m")) else "-",
-                "近 3 個月的訂單總數。",
-                value_suffix=median_suffix(designer_metrics_filtered, "total_orders_3m", "number0"),
-            )
+        with st.expander("查看新客留存力構成（點開看細項）", expanded=False):
+            c1, c2, c3, c4 = st.columns(4)
+            with c1:
+                metric_card(
+                    "新客留存率(60天)",
+                    f"{r['new_retention_rate_3m']:.2%}" if pd.notna(r.get("new_retention_rate_3m")) else "-",
+                    "滿 60 天新客中，60 天內有回店（同分店）的比例。",
+                    value_suffix=median_suffix(designer_metrics_filtered, "new_retention_rate_3m", "percent"),
+                )
+            with c2:
+                metric_card(
+                    "新客流失率(60天)",
+                    f"{r['new_churn_rate_3m']:.2%}" if pd.notna(r.get("new_churn_rate_3m")) else "-",
+                    "滿 60 天新客中，60 天內未回店（同分店）的比例。",
+                    value_suffix=median_suffix(designer_metrics_filtered, "new_churn_rate_3m", "percent"),
+                )
+            with c3:
+                metric_card(
+                    "流失人數(3M)",
+                    f"{int(r['new_churned_3m'])}" if pd.notna(r.get("new_churned_3m")) else "-",
+                    "上述滿 60 天新客中的流失人數。",
+                    value_suffix=median_suffix(designer_metrics_filtered, "new_churned_3m", "number0"),
+                )
+            with c4:
+                metric_card(
+                    "留住人數(3M)",
+                    f"{int(r['new_retained_3m'])}" if pd.notna(r.get("new_retained_3m")) else "-",
+                    "上述滿 60 天新客中的留住人數。",
+                    value_suffix=median_suffix(designer_metrics_filtered, "new_retained_3m", "number0"),
+                )
 
-        section_gap()
-        st.markdown("**新客留存力**")
-        with st.expander("指標對應", expanded=False):
-            st.markdown("- 新客留存率(60天)（= 1 − 新客流失率）")
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            metric_card(
-                "新客留存率(60天)",
-                f"{r['new_retention_rate_3m']:.2%}" if pd.notna(r.get("new_retention_rate_3m")) else "-",
-                "滿 60 天新客中，60 天內有回店（同分店）的比例。",
-                value_suffix=median_suffix(designer_metrics_filtered, "new_retention_rate_3m", "percent"),
-            )
-        with c2:
-            metric_card(
-                "新客流失率(60天)",
-                f"{r['new_churn_rate_3m']:.2%}" if pd.notna(r.get("new_churn_rate_3m")) else "-",
-                "滿 60 天新客中，60 天內未回店（同分店）的比例。",
-                value_suffix=median_suffix(designer_metrics_filtered, "new_churn_rate_3m", "percent"),
-            )
-        with c3:
-            metric_card(
-                "流失人數(3M)",
-                f"{int(r['new_churned_3m'])}" if pd.notna(r.get("new_churned_3m")) else "-",
-                "上述滿 60 天新客中的流失人數。",
-                value_suffix=median_suffix(designer_metrics_filtered, "new_churned_3m", "number0"),
-            )
-        with c4:
-            metric_card(
-                "留住人數(3M)",
-                f"{int(r['new_retained_3m'])}" if pd.notna(r.get("new_retained_3m")) else "-",
-                "上述滿 60 天新客中的留住人數。",
-                value_suffix=median_suffix(designer_metrics_filtered, "new_retained_3m", "number0"),
-            )
+            detail_recent = new_recent_churn[new_recent_churn["設計師"] == designer_select].copy()
+            if not detail_recent.empty:
+                detail_recent["末三碼"] = detail_recent["phone_key"].apply(mask_last3)
+                detail_recent["首單時間"] = detail_recent["結帳操作時間"]
+                base_cols = ["末三碼", "分店", "首單時間"]
+                if name_col in detail_recent.columns:
+                    base_cols.insert(1, name_col)
 
-        detail_recent = new_recent_churn[new_recent_churn["設計師"] == designer_select].copy()
-        if not detail_recent.empty:
-            detail_recent["末三碼"] = detail_recent["phone_key"].apply(mask_last3)
-            detail_recent["首單時間"] = detail_recent["結帳操作時間"]
-            base_cols = ["末三碼", "分店", "首單時間"]
-            if name_col in detail_recent.columns:
-                base_cols.insert(1, name_col)
+                churn_list = detail_recent[detail_recent["churn"]].copy()
+                retained_list = detail_recent[~detail_recent["churn"]].copy()
+                if "return_days_store" in retained_list.columns:
+                    retained_list = retained_list.rename(columns={"return_days_store": "回店天數"})
+                    retained_cols = base_cols + ["回店天數"]
+                else:
+                    retained_cols = base_cols
 
-            churn_list = detail_recent[detail_recent["churn"]].copy()
-            retained_list = detail_recent[~detail_recent["churn"]].copy()
-            if "return_days_store" in retained_list.columns:
-                retained_list = retained_list.rename(columns={"return_days_store": "回店天數"})
-                retained_cols = base_cols + ["回店天數"]
+                with st.expander("查看流失名單（近3月、滿60天）", expanded=False):
+                    if churn_list.empty:
+                        st.info("目前沒有流失名單。")
+                    else:
+                        show_cols = [c for c in base_cols if c in churn_list.columns]
+                        st.dataframe(churn_list[show_cols].sort_values("首單時間"), use_container_width=True)
+
+                with st.expander("查看留住名單（近3月、滿60天）", expanded=False):
+                    if retained_list.empty:
+                        st.info("目前沒有留住名單。")
+                    else:
+                        show_cols = [c for c in retained_cols if c in retained_list.columns]
+                        st.dataframe(retained_list[show_cols].sort_values("首單時間"), use_container_width=True)
+
+        with st.expander("查看熟客轉化力構成（點開看細項）", expanded=False):
+            c1, c2, c3, c4 = st.columns(4)
+            with c1:
+                metric_card(
+                    "熟客化率",
+                    f"{r['regular_rate_180']:.2%}" if pd.notna(r.get("regular_rate_180")) else "-",
+                    "同分店同師傅，180 天內消費 ≥5 次的比例。",
+                    value_suffix=median_suffix(designer_metrics_filtered, "regular_rate_180", "percent"),
+                )
+            with c2:
+                metric_card(
+                    "熟客化樣本數",
+                    f"{int(r['regular_base_180'])}" if pd.notna(r.get("regular_base_180")) else "-",
+                    "關係起點已滿 180 天的樣本數。",
+                    value_suffix=median_suffix(designer_metrics_filtered, "regular_base_180", "number0"),
+                )
+            with c3:
+                metric_card(
+                    "熟客達標人數",
+                    f"{int(r['regular_achieved_180'])}" if pd.notna(r.get("regular_achieved_180")) else "-",
+                    "在 180 天內達成 ≥5 次的人數。",
+                    value_suffix=median_suffix(designer_metrics_filtered, "regular_achieved_180", "number0"),
+                )
+            with c4:
+                metric_card(
+                    "平均達標天數",
+                    f"{r['regular_days_avg_180']:.0f}" if pd.notna(r.get("regular_days_avg_180")) else "-",
+                    "達成第 5 次消費的平均天數。",
+                    value_suffix=median_suffix(designer_metrics_filtered, "regular_days_avg_180", "number0"),
+                )
+
+            rel_all = relationship_first[relationship_first["設計師"] == designer_select].copy()
+            if not rel_all.empty:
+                rel_all = rel_all[rel_all["regular_matured_180"]].copy()
+                rel_all["regular_achieved"] = rel_all["regular_achieved"].fillna(False)
+                regular_list = rel_all[rel_all["regular_achieved"] == True].copy()
+                if not regular_list.empty:
+                    regular_list["末三碼"] = regular_list["phone_key"].apply(mask_last3)
+                    regular_list["關係起點"] = regular_list["baseline_time"]
+                    regular_list["熟客達標日"] = regular_list["regular_date"]
+                    regular_list["達標天數"] = (regular_list["regular_date"] - regular_list["baseline_time"]).dt.days
+                base_cols = ["末三碼", "分店", "關係起點", "熟客達標日", "達標天數"]
+                if name_col in rel_all.columns:
+                    base_cols.insert(1, name_col)
+                label_count = int(r["regular_achieved_180"]) if pd.notna(r.get("regular_achieved_180")) else 0
+                with st.expander(f"查看熟客名單（熟客達標人數：{label_count}）", expanded=False):
+                    if regular_list.empty:
+                        st.info("目前沒有熟客達標名單。")
+                    else:
+                        show_cols = [c for c in base_cols if c in regular_list.columns]
+                        st.dataframe(regular_list[show_cols].sort_values("熟客達標日"), use_container_width=True)
+
+        with st.expander("查看熟客經營力構成（點開看細項）", expanded=False):
+            c1, c2, c3, c4 = st.columns(4)
+            with c1:
+                metric_card(
+                    "熟客維持率",
+                    f"{r['retention_rate_180']:.2%}" if pd.notna(r.get("retention_rate_180")) else "-",
+                    "熟客達成後 180 天內回訪 ≥3 次的比例。",
+                    value_suffix=median_suffix(designer_metrics_filtered, "retention_rate_180", "percent"),
+                )
+            with c2:
+                metric_card(
+                    "熟客維持樣本數",
+                    f"{int(r['retention_base_180'])}" if pd.notna(r.get("retention_base_180")) else "-",
+                    "熟客達成且後 180 天已滿期的樣本數。",
+                    value_suffix=median_suffix(designer_metrics_filtered, "retention_base_180", "number0"),
+                )
+            with c3:
+                metric_card(
+                    "熟客維持達標人數",
+                    f"{int(r['retention_achieved_180'])}" if pd.notna(r.get("retention_achieved_180")) else "-",
+                    "後 180 天回訪 ≥3 次的人數。",
+                    value_suffix=median_suffix(designer_metrics_filtered, "retention_achieved_180", "number0"),
+                )
+            with c4:
+                metric_card(
+                    "熟客月均回訪次數",
+                    f"{r['post_regular_visits_monthly_avg_180']:.2f}" if pd.notna(r.get("post_regular_visits_monthly_avg_180")) else "-",
+                    "熟客達成後 180 天內平均回訪次數 / 6 個月。",
+                    value_suffix=median_suffix(designer_metrics_filtered, "post_regular_visits_monthly_avg_180", "number1"),
+                )
+
+            rel_all = relationship_first[relationship_first["設計師"] == designer_select].copy()
+            if not rel_all.empty:
+                retention_base = rel_all[(rel_all["regular_achieved"] == True) & (rel_all["retention_matured_180"])].copy()
+                retention_base["retention_achieved"] = retention_base["retention_achieved"].fillna(False)
+                deep_list = retention_base[retention_base["retention_achieved"] == True].copy()
+                if not deep_list.empty:
+                    deep_list["末三碼"] = deep_list["phone_key"].apply(mask_last3)
+                    deep_list["關係起點"] = deep_list["baseline_time"]
+                    deep_list["熟客達標日"] = deep_list["regular_date"]
+                    deep_list["後180天回訪次數"] = deep_list["post_regular_visits_180"]
+                deep_cols = ["末三碼", "分店", "關係起點", "熟客達標日", "後180天回訪次數"]
+                if name_col in retention_base.columns:
+                    deep_cols.insert(1, name_col)
+                label_count = int(r["retention_achieved_180"]) if pd.notna(r.get("retention_achieved_180")) else 0
+                with st.expander(f"查看深度熟客名單（熟客維持達標人數：{label_count}）", expanded=False):
+                    if deep_list.empty:
+                        st.info("目前沒有深度熟客名單。")
+                    else:
+                        show_cols = [c for c in deep_cols if c in deep_list.columns]
+                        st.dataframe(deep_list[show_cols].sort_values("熟客達標日"), use_container_width=True)
+
+        with st.expander("查看業績波動度構成（點開看細項）", expanded=False):
+            c1, _, _, _ = st.columns(4)
+            if pd.notna(r.get("service_hours_cv_6m")):
+                with c1:
+                    metric_card(
+                        "業績穩定度(工時CV)",
+                        f"{r['service_hours_cv_6m']:.2f}",
+                        "近 6 個月服務時數的變異係數（CV），越低越穩定。",
+                        value_suffix=median_suffix(designer_metrics_filtered, "service_hours_cv_6m", "number1"),
+                    )
             else:
-                retained_cols = base_cols
-
-            with st.expander("查看流失名單（近3月、滿60天）", expanded=False):
-                if churn_list.empty:
-                    st.info("目前沒有流失名單。")
-                else:
-                    show_cols = [c for c in base_cols if c in churn_list.columns]
-                    st.dataframe(churn_list[show_cols].sort_values("首單時間"), use_container_width=True)
-
-            with st.expander("查看留住名單（近3月、滿60天）", expanded=False):
-                if retained_list.empty:
-                    st.info("目前沒有留住名單。")
-                else:
-                    show_cols = [c for c in retained_cols if c in retained_list.columns]
-                    st.dataframe(retained_list[show_cols].sort_values("首單時間"), use_container_width=True)
-
-        section_gap()
-        st.markdown("**熟客轉化力（180 天內達 5 次）**")
-        with st.expander("指標對應", expanded=False):
-            st.markdown("- 熟客化率(180天達≥5次)")
-            st.markdown("- 平均達標天數（越低越好）")
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            metric_card(
-                "熟客化率",
-                f"{r['regular_rate_180']:.2%}" if pd.notna(r.get("regular_rate_180")) else "-",
-                "同分店同師傅，180 天內消費 ≥5 次的比例。",
-                value_suffix=median_suffix(designer_metrics_filtered, "regular_rate_180", "percent"),
-            )
-        with c2:
-            metric_card(
-                "熟客化樣本數",
-                f"{int(r['regular_base_180'])}" if pd.notna(r.get("regular_base_180")) else "-",
-                "關係起點已滿 180 天的樣本數。",
-                value_suffix=median_suffix(designer_metrics_filtered, "regular_base_180", "number0"),
-            )
-        with c3:
-            metric_card(
-                "熟客達標人數",
-                f"{int(r['regular_achieved_180'])}" if pd.notna(r.get("regular_achieved_180")) else "-",
-                "在 180 天內達成 ≥5 次的人數。",
-                value_suffix=median_suffix(designer_metrics_filtered, "regular_achieved_180", "number0"),
-            )
-        with c4:
-            metric_card(
-                "平均達標天數",
-                f"{r['regular_days_avg_180']:.0f}" if pd.notna(r.get("regular_days_avg_180")) else "-",
-                "達成第 5 次消費的平均天數。",
-                value_suffix=median_suffix(designer_metrics_filtered, "regular_days_avg_180", "number0"),
-            )
-
-        # 熟客名單（達標）
-        rel_all = relationship_first[relationship_first["設計師"] == designer_select].copy()
-        if not rel_all.empty:
-            rel_all = rel_all[rel_all["regular_matured_180"]].copy()
-            rel_all["regular_achieved"] = rel_all["regular_achieved"].fillna(False)
-            regular_list = rel_all[rel_all["regular_achieved"] == True].copy()
-            if not regular_list.empty:
-                regular_list["末三碼"] = regular_list["phone_key"].apply(mask_last3)
-                regular_list["關係起點"] = regular_list["baseline_time"]
-                regular_list["熟客達標日"] = regular_list["regular_date"]
-                regular_list["達標天數"] = (regular_list["regular_date"] - regular_list["baseline_time"]).dt.days
-            base_cols = ["末三碼", "分店", "關係起點", "熟客達標日", "達標天數"]
-            if name_col in rel_all.columns:
-                base_cols.insert(1, name_col)
-            label_count = int(r["regular_achieved_180"]) if pd.notna(r.get("regular_achieved_180")) else 0
-            with st.expander(f"查看熟客名單（熟客達標人數：{label_count}）", expanded=False):
-                if regular_list.empty:
-                    st.info("目前沒有熟客達標名單。")
-                else:
-                    show_cols = [c for c in base_cols if c in regular_list.columns]
-                    st.dataframe(regular_list[show_cols].sort_values("熟客達標日"), use_container_width=True)
-
-        section_gap()
-        st.markdown("**熟客經營力（後 180 天內 ≥3 次）**")
-        with st.expander("指標對應", expanded=False):
-            st.markdown("- 熟客維持率(後180天≥3次)")
-            st.markdown("- 熟客月均回訪次數(後180天)")
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            metric_card(
-                "熟客維持率",
-                f"{r['retention_rate_180']:.2%}" if pd.notna(r.get("retention_rate_180")) else "-",
-                "熟客達成後 180 天內回訪 ≥3 次的比例。",
-                value_suffix=median_suffix(designer_metrics_filtered, "retention_rate_180", "percent"),
-            )
-        with c2:
-            metric_card(
-                "熟客維持樣本數",
-                f"{int(r['retention_base_180'])}" if pd.notna(r.get("retention_base_180")) else "-",
-                "熟客達成且後 180 天已滿期的樣本數。",
-                value_suffix=median_suffix(designer_metrics_filtered, "retention_base_180", "number0"),
-            )
-        with c3:
-            metric_card(
-                "熟客維持達標人數",
-                f"{int(r['retention_achieved_180'])}" if pd.notna(r.get("retention_achieved_180")) else "-",
-                "後 180 天回訪 ≥3 次的人數。",
-                value_suffix=median_suffix(designer_metrics_filtered, "retention_achieved_180", "number0"),
-            )
-        with c4:
-            metric_card(
-                "熟客月均回訪次數",
-                f"{r['post_regular_visits_monthly_avg_180']:.2f}" if pd.notna(r.get("post_regular_visits_monthly_avg_180")) else "-",
-                "熟客達成後 180 天內平均回訪次數 / 6 個月。",
-                value_suffix=median_suffix(designer_metrics_filtered, "post_regular_visits_monthly_avg_180", "number1"),
-            )
-
-        # 深度熟客名單（維持達標）
-        if not rel_all.empty:
-            retention_base = rel_all[(rel_all["regular_achieved"] == True) & (rel_all["retention_matured_180"])].copy()
-            retention_base["retention_achieved"] = retention_base["retention_achieved"].fillna(False)
-            deep_list = retention_base[retention_base["retention_achieved"] == True].copy()
-            if not deep_list.empty:
-                deep_list["末三碼"] = deep_list["phone_key"].apply(mask_last3)
-                deep_list["關係起點"] = deep_list["baseline_time"]
-                deep_list["熟客達標日"] = deep_list["regular_date"]
-                deep_list["後180天回訪次數"] = deep_list["post_regular_visits_180"]
-            deep_cols = ["末三碼", "分店", "關係起點", "熟客達標日", "後180天回訪次數"]
-            if name_col in retention_base.columns:
-                deep_cols.insert(1, name_col)
-            label_count = int(r["retention_achieved_180"]) if pd.notna(r.get("retention_achieved_180")) else 0
-            with st.expander(f"查看深度熟客名單（熟客維持達標人數：{label_count}）", expanded=False):
-                if deep_list.empty:
-                    st.info("目前沒有深度熟客名單。")
-                else:
-                    show_cols = [c for c in deep_cols if c in deep_list.columns]
-                    st.dataframe(deep_list[show_cols].sort_values("熟客達標日"), use_container_width=True)
-
-        section_gap()
-        st.markdown("**業績穩定度**")
-        with st.expander("指標對應", expanded=False):
-            st.markdown("- 近6個月 CV（工時或有單天數）")
-        c1, c2, c3, c4 = st.columns(4)
-        if pd.notna(r.get("service_hours_cv_6m")):
-            with c1:
-                metric_card(
-                    "業績穩定度(工時CV)",
-                    f"{r['service_hours_cv_6m']:.2f}",
-                    "近 6 個月服務時數的變異係數（CV），越低越穩定。",
-                    value_suffix=median_suffix(designer_metrics_filtered, "service_hours_cv_6m", "number1"),
-                )
-        else:
-            with c1:
-                metric_card(
-                    "業績穩定度(出勤CV)",
-                    f"{r['active_days_cv_6m']:.2f}" if pd.notna(r.get("active_days_cv_6m")) else "-",
-                    "近 6 個月出勤天數的變異係數（CV），越低越穩定。",
-                    value_suffix=median_suffix(designer_metrics_filtered, "active_days_cv_6m", "number1"),
-                )
+                with c1:
+                    metric_card(
+                        "業績穩定度(出勤CV)",
+                        f"{r['active_days_cv_6m']:.2f}" if pd.notna(r.get("active_days_cv_6m")) else "-",
+                        "近 6 個月出勤天數的變異係數（CV），越低越穩定。",
+                        value_suffix=median_suffix(designer_metrics_filtered, "active_days_cv_6m", "number1"),
+                    )
 
         st.caption("熟客化/熟客維持皆以「同分店、同師傅」計算；業績穩定度 CV 越低代表越穩定。")
 
