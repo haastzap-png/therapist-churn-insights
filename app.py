@@ -2032,21 +2032,34 @@ else:
                         retention_base = rel_all[(rel_all["regular_achieved"] == True) & (rel_all["retention_matured_180"])].copy()
                         retention_base["retention_achieved"] = retention_base["retention_achieved"].fillna(False)
                         deep_list = retention_base[retention_base["retention_achieved"] == True].copy()
+                        churned_deep_list = retention_base[retention_base["retention_achieved"] == False].copy()
                         if not deep_list.empty:
                             deep_list["末三碼"] = deep_list["phone_key"].apply(mask_last3)
                             deep_list["關係起點"] = deep_list["baseline_time"]
                             deep_list["熟客達標日"] = deep_list["regular_date"]
                             deep_list["後180天回訪次數"] = deep_list["post_regular_visits_180"]
+                        if not churned_deep_list.empty:
+                            churned_deep_list["末三碼"] = churned_deep_list["phone_key"].apply(mask_last3)
+                            churned_deep_list["關係起點"] = churned_deep_list["baseline_time"]
+                            churned_deep_list["熟客達標日"] = churned_deep_list["regular_date"]
+                            churned_deep_list["後180天回訪次數"] = churned_deep_list["post_regular_visits_180"]
                         deep_cols = ["末三碼", "分店", "關係起點", "熟客達標日", "後180天回訪次數"]
                         if name_col in retention_base.columns:
                             deep_cols.insert(1, name_col)
                         label_count = int(r["retention_achieved_180"]) if pd.notna(r.get("retention_achieved_180")) else 0
+                        churned_label_count = int(r["retention_base_180"] - r["retention_achieved_180"]) if pd.notna(r.get("retention_base_180")) and pd.notna(r.get("retention_achieved_180")) else 0
                         with st.expander(f"查看深度熟客名單（熟客維持達標人數：{label_count}）", expanded=False):
                             if deep_list.empty:
                                 st.info("目前沒有深度熟客名單。")
                             else:
                                 show_cols = [c for c in deep_cols if c in deep_list.columns]
                                 st.dataframe(deep_list[show_cols].sort_values("熟客達標日"), use_container_width=True)
+                        with st.expander(f"查看流失熟客名單（熟客維持未達標人數：{churned_label_count}）", expanded=False):
+                            if churned_deep_list.empty:
+                                st.info("目前沒有流失熟客名單。")
+                            else:
+                                show_cols = [c for c in deep_cols if c in churned_deep_list.columns]
+                                st.dataframe(churned_deep_list[show_cols].sort_values("熟客達標日"), use_container_width=True)
         row4 = st.columns(2)
         with row4[0]:
             rank_txt, pct_value_text, tag, bg, color = score_insight(designer_metrics_filtered, "basic_goal_0100", r.get("basic_goal_0100"))
