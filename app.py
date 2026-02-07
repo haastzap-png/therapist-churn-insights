@@ -1967,34 +1967,46 @@ else:
                             "達成第 5 次消費的平均天數。",
                             value_suffix=median_suffix(designer_metrics_filtered, "regular_days_avg_180", "number0"),
                         )
-                    d1, _, _, _ = st.columns(4)
-                    with d1:
-                        metric_card(
-                            "經營中熟客",
-                            f"{int(r['in_service_regular_180'])}" if pd.notna(r.get("in_service_regular_180")) else "-",
-                            "已達熟客（180天達5次），但後180天觀察期尚未滿的人數。",
-                            value_suffix=median_suffix(designer_metrics_filtered, "in_service_regular_180", "number0"),
-                        )
 
                     if not rel_all.empty:
                         rel_all_conv = rel_all[rel_all["regular_matured_180"]].copy()
                         rel_all_conv["regular_achieved"] = rel_all_conv["regular_achieved"].fillna(False)
                         regular_list = rel_all_conv[rel_all_conv["regular_achieved"] == True].copy()
+                        in_service_list = rel_all_conv[
+                            (rel_all_conv["regular_achieved"] == True)
+                            & (rel_all_conv["retention_matured_180"] != True)
+                        ].copy()
                         if not regular_list.empty:
                             regular_list["末三碼"] = regular_list["phone_key"].apply(mask_last3)
                             regular_list["關係起點"] = regular_list["baseline_time"]
                             regular_list["熟客達標日"] = regular_list["regular_date"]
                             regular_list["達標天數"] = (regular_list["regular_date"] - regular_list["baseline_time"]).dt.days
+                        if not in_service_list.empty:
+                            in_service_list["末三碼"] = in_service_list["phone_key"].apply(mask_last3)
+                            in_service_list["關係起點"] = in_service_list["baseline_time"]
+                            in_service_list["熟客達標日"] = in_service_list["regular_date"]
+                            in_service_list["觀察到期日"] = in_service_list["regular_date"] + pd.Timedelta(days=RETENTION_DAYS)
+                            in_service_list["剩餘天數"] = (in_service_list["觀察到期日"] - end_date).dt.days.clip(lower=0)
                         base_cols = ["末三碼", "分店", "關係起點", "熟客達標日", "達標天數"]
                         if name_col in rel_all_conv.columns:
                             base_cols.insert(1, name_col)
+                        in_service_cols = ["末三碼", "分店", "關係起點", "熟客達標日", "觀察到期日", "剩餘天數"]
+                        if name_col in rel_all_conv.columns:
+                            in_service_cols.insert(1, name_col)
                         label_count = int(r["regular_achieved_180"]) if pd.notna(r.get("regular_achieved_180")) else 0
+                        in_service_count = int(r["in_service_regular_180"]) if pd.notna(r.get("in_service_regular_180")) else 0
                         with st.expander(f"查看熟客名單（熟客達標人數：{label_count}）", expanded=False):
                             if regular_list.empty:
                                 st.info("目前沒有熟客達標名單。")
                             else:
                                 show_cols = [c for c in base_cols if c in regular_list.columns]
                                 st.dataframe(regular_list[show_cols].sort_values("熟客達標日"), use_container_width=True)
+                        with st.expander(f"查看經營中熟客名單（經營中熟客：{in_service_count}）", expanded=False):
+                            if in_service_list.empty:
+                                st.info("目前沒有經營中熟客名單。")
+                            else:
+                                show_cols = [c for c in in_service_cols if c in in_service_list.columns]
+                                st.dataframe(in_service_list[show_cols].sort_values("熟客達標日"), use_container_width=True)
         with row3[1]:
             rank_txt, pct_value_text, tag, bg, color = score_insight(designer_metrics_filtered, "retain_goal_0100", r.get("retain_goal_0100"))
             with st.container(border=True):
