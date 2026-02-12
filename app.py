@@ -877,6 +877,23 @@ def score_insight(df, score_col, value, tag_mode="generic"):
     bg, color = colors[tier]
     return rank_text, pct_value_text, labels[tier], bg, color
 
+def stability_state_tag(stability_score, baseline_score):
+    s = pd.to_numeric(stability_score, errors="coerce")
+    b = pd.to_numeric(baseline_score, errors="coerce")
+    if pd.isna(s) or pd.isna(b):
+        return "資料不足", "#eef2f7", "#6b7280"
+    if s >= 80 and b >= 80:
+        return "穩健高效", "#e6f4ea", "#1b7f3b"
+    if s >= 80 and b >= 60:
+        return "穩健運行", "#e8f5e9", "#2ca02c"
+    if s >= 60 and b >= 60:
+        return "可控波動", "#e8f1fb", "#4e79a7"
+    if s >= 60 and b < 60:
+        return "低量穩定", "#fff4e5", "#f2b134"
+    if s < 60 and b >= 60:
+        return "高波預警", "#fdecea", "#d95d39"
+    return "波動失衡", "#fdecea", "#d62728"
+
 def median_suffix(df, col, fmt):
     if col not in df.columns:
         return None
@@ -2142,15 +2159,12 @@ else:
             rank_txt, pct_value_text, tag, bg, color = score_insight(designer_metrics_filtered, "stability_goal_0100", r.get("stability_goal_0100"))
             stability_score = pd.to_numeric(r.get("stability_goal_0100"), errors="coerce")
             baseline_score = pd.to_numeric(r.get("basic_goal_0100"), errors="coerce")
-            stable_good = pd.notna(stability_score) and pd.notna(baseline_score) and stability_score >= 60 and baseline_score >= 60
-            stability_label = "穩定好" if stable_good else "穩定爛"
-            stability_bg = "#e6f4ea" if stable_good else "#fdecea"
-            stability_color = "#1b7f3b" if stable_good else "#d62728"
+            stability_label, stability_bg, stability_color = stability_state_tag(stability_score, baseline_score)
             with st.container(border=True):
                 metric_card(
                     "業績波動度",
                     f"{r['stability_goal_0100']:.0f}分" if pd.notna(r.get("stability_goal_0100")) else "-",
-                    "看「工作量起伏大不大」：近 6 個月每月工時（或有單天數）的波動程度，越穩定分數越高。標籤會直接顯示『穩定好/穩定爛』：當業績波動度與合作穩定度都達 60 分以上為穩定好，否則為穩定爛。",
+                    "看「工作量起伏大不大」：近 6 個月每月工時（或有單天數）的波動程度，越穩定分數越高。標籤為情境判讀：穩健高效／穩健運行／可控波動／低量穩定／高波預警／波動失衡（依業績波動度與合作穩定度共同判定）。",
                     subtext=pct_value_text if pct_value_text else "",
                     tag_text=stability_label,
                     tag_bg=stability_bg,
