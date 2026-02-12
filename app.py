@@ -165,11 +165,11 @@ div[data-testid="stMetric"] label {
   margin-bottom: 8px;
 }
 .metric-card.metric-flat {
-  background: transparent;
-  border: 0;
-  box-shadow: none;
+  background: linear-gradient(180deg, rgba(255,255,255,0.86) 0%, rgba(250,246,238,0.92) 100%);
+  border: 1px solid #e4d8c6;
+  box-shadow: 0 4px 12px rgba(33, 28, 20, 0.06);
   margin-bottom: 0;
-  padding: 8px 6px 4px 6px;
+  padding: 10px 12px 8px 12px;
   min-height: 84px;
 }
 .metric-card.metric-horizontal {
