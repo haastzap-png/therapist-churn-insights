@@ -311,6 +311,15 @@ div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stExpander"] de
   margin: 0;
   line-height: 1.2;
 }
+div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stExpander"] details > summary:has(p:empty) {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 10px;
+  min-height: 28px;
+}
+div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stExpander"] details > summary:has(p:empty) p {
+  display: none;
+}
 div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stExpander"] details > div {
   padding-top: 6px;
 }
@@ -1835,7 +1844,7 @@ else:
                     horizontal=True,
                     flat=True,
                 )
-                with st.expander("構成細項", expanded=False):
+                with st.expander("", expanded=False):
                     cc1, cc2, cc3 = st.columns(3)
                     with cc1:
                         metric_card("新客留存力", f"{r['new_ret_goal_0100']:.0f}分" if pd.notna(r.get("new_ret_goal_0100")) else "-", "戰力指標子分數。")
@@ -1862,7 +1871,7 @@ else:
                     horizontal=True,
                     flat=True,
                 )
-                with st.expander("構成細項", expanded=False):
+                with st.expander("", expanded=False):
                     c1, c2, c3, c4 = st.columns(4)
                     with c1:
                         metric_card(
@@ -1938,7 +1947,7 @@ else:
                     horizontal=True,
                     flat=True,
                 )
-                with st.expander("構成細項", expanded=False):
+                with st.expander("", expanded=False):
                     c1, c2, c3, c4 = st.columns(4)
                     with c1:
                         metric_card(
@@ -2024,7 +2033,7 @@ else:
                     horizontal=True,
                     flat=True,
                 )
-                with st.expander("構成細項", expanded=False):
+                with st.expander("", expanded=False):
                     c1, c2, c3, c4 = st.columns(4)
                     with c1:
                         metric_card(
@@ -2104,7 +2113,7 @@ else:
                     horizontal=True,
                     flat=True,
                 )
-                with st.expander("構成細項", expanded=False):
+                with st.expander("", expanded=False):
                     c1, c2, c3, c4 = st.columns(4)
                     with c1:
                         metric_card(
@@ -2150,7 +2159,7 @@ else:
                     horizontal=True,
                     flat=True,
                 )
-                with st.expander("構成細項", expanded=False):
+                with st.expander("", expanded=False):
                     c1, _, _, _ = st.columns(4)
                     if pd.notna(r.get("service_hours_cv_6m")):
                         with c1:
