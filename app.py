@@ -279,6 +279,7 @@ div[data-testid="stMetric"] label {
   height: 18px;
 }
 div[data-testid="stVerticalBlockBorderWrapper"] {
+  position: relative;
   border: 1px solid #ddd3c4;
   border-radius: 16px;
   background: linear-gradient(180deg, #fffdf9 0%, #f7f2e9 100%);
@@ -312,13 +313,37 @@ div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stExpander"] de
   line-height: 1.2;
 }
 div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stExpander"] details > summary:has(p:empty) {
-  display: flex;
-  justify-content: flex-end;
-  padding: 4px 10px;
-  min-height: 28px;
+  position: absolute;
+  top: 55px;
+  left: 50%;
+  transform: translate(115px, -50%);
+  width: 30px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0;
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #c7c1b7;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #6b6b63;
+  z-index: 6;
+  box-shadow: 0 2px 6px rgba(33, 28, 20, 0.08);
+}
+div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stExpander"] details:has(> summary p:empty) {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
 }
 div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stExpander"] details > summary:has(p:empty) p {
   display: none;
+}
+div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stExpander"] details > summary:has(p:empty) svg {
+  width: 0.95rem;
+  height: 0.95rem;
 }
 div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stExpander"] details > div {
   padding-top: 6px;
