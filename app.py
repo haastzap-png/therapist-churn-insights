@@ -287,21 +287,23 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
   padding: 4px 8px 8px 8px;
   margin-bottom: 10px;
 }
-div[data-testid="stVerticalBlockBorderWrapper"] > div[data-testid="stExpander"] {
+div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stExpander"] {
   margin: 0;
   position: relative;
 }
-div[data-testid="stVerticalBlockBorderWrapper"] > div[data-testid="stExpander"] details {
+div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stExpander"] details:has(> summary p:empty) {
   border: 0;
   background: transparent;
   box-shadow: none;
   overflow: visible;
+  min-height: 0;
+  position: relative;
 }
-div[data-testid="stVerticalBlockBorderWrapper"] > div[data-testid="stExpander"] details > summary {
+div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stExpander"] details > summary:has(p:empty) {
   position: absolute;
-  top: -74px;
+  top: -108px;
   left: 50%;
-  transform: translateX(122px);
+  transform: translateX(150px);
   width: 30px;
   height: 30px;
   min-height: 30px;
@@ -318,14 +320,14 @@ div[data-testid="stVerticalBlockBorderWrapper"] > div[data-testid="stExpander"] 
   z-index: 8;
   box-shadow: 0 2px 6px rgba(33, 28, 20, 0.08);
 }
-div[data-testid="stVerticalBlockBorderWrapper"] > div[data-testid="stExpander"] details > summary p {
+div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stExpander"] details > summary:has(p:empty) p {
   display: none;
 }
-div[data-testid="stVerticalBlockBorderWrapper"] > div[data-testid="stExpander"] details > summary svg {
+div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stExpander"] details > summary:has(p:empty) svg {
   width: 0.95rem;
   height: 0.95rem;
 }
-div[data-testid="stVerticalBlockBorderWrapper"] > div[data-testid="stExpander"] details[open] > div {
+div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stExpander"] details[open]:has(> summary p:empty) > div {
   margin-top: 8px;
   padding: 8px 4px 4px 4px;
   border-top: 1px dashed #d8ccb9;
