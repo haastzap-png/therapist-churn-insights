@@ -279,11 +279,12 @@ div[data-testid="stMetric"] label {
   height: 18px;
 }
 div[data-testid="stVerticalBlockBorderWrapper"] {
-  border: 1px solid var(--line);
+  border: 1px solid #ddd3c4;
   border-radius: 16px;
-  background: var(--card);
-  box-shadow: var(--shadow);
+  background: linear-gradient(180deg, #fffdf9 0%, #f7f2e9 100%);
+  box-shadow: 0 10px 24px rgba(33, 28, 20, 0.10);
   padding: 4px 8px 8px 8px;
+  margin-bottom: 10px;
 }
 div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stExpander"] {
   margin-top: 2px;
@@ -291,9 +292,9 @@ div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stExpander"] {
 }
 div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stExpander"] details {
   border: 0;
-  border-top: 1px dashed var(--line);
+  border-top: 1px dashed #d8ccb9;
   border-radius: 0 0 12px 12px;
-  background: transparent;
+  background: rgba(255, 255, 255, 0.58);
   box-shadow: none;
   overflow: hidden;
 }
